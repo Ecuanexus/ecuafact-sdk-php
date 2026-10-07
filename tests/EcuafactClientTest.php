@@ -6,6 +6,8 @@ namespace Ecuafact\Sdk\Tests;
 
 use Ecuafact\Sdk\Contracts\ComprobanteRequest;
 use Ecuafact\Sdk\Contracts\InfoTributaria;
+use Ecuafact\Sdk\Contracts\Operation;
+use Ecuafact\Sdk\Contracts\PerfilEmisor;
 use Ecuafact\Sdk\EcuafactApiException;
 use Ecuafact\Sdk\EcuafactClient;
 use Ecuafact\Sdk\EcuafactClientOptions;
@@ -238,13 +240,59 @@ final class EcuafactClientTest extends TestCase
     {
         $transport = new FakeTransport(new TransportResponse(
             200,
-            '{"datos":{"idOperacion":"op-1","estado":"authorized"}}'
+            '{"datos":{"idOperacion":"3f2b8c1e-7a4d-4e2b-9c11-5d6f7a8b9c0d","estado":"authorized"}}'
         ));
-        $operacion = $this->cliente($transport)->consultarOperacion('op-1');
+        $operacion = $this->cliente($transport)->consultarOperacion('3f2b8c1e-7a4d-4e2b-9c11-5d6f7a8b9c0d');
         self::assertSame('authorized', $operacion->estado);
         self::assertSame('GET', $transport->peticiones[0]['method']);
-        self::assertStringEndsWith('/v1/operaciones/op-1', $transport->peticiones[0]['url']);
+        self::assertStringEndsWith('/v1/operaciones/3f2b8c1e-7a4d-4e2b-9c11-5d6f7a8b9c0d', $transport->peticiones[0]['url']);
         self::assertStringNotContainsString('/consultar', $transport->peticiones[0]['url']);
+    }
+
+    public function testLeeOperacionCompletaYToleraCamposNuevos(): void
+    {
+        $transport = new FakeTransport(new TransportResponse(
+            200,
+            '{"datos":{"uid":"u-1","idOperacion":"op-1","ambiente":1,"codDoc":"01","estado":"procesado",'
+            . '"claveAcceso":"0101","codigoError":null,"fechaCreacion":"2026-10-07T10:00:00",'
+            . '"fechaActualizacion":"2026-10-07T10:01:00","estadoAutorizacion":"autorizado",'
+            . '"fechaAutorizacion":"2026-10-07T10:01:00-05:00","fechaConsulta":"2026-10-07T10:01:00",'
+            . '"codigoErrorConsulta":null,"campoNuevo":{"x":1}}}'
+        ));
+        $operacion = $this->cliente($transport)->getOperacion('3f2b8c1e-7a4d-4e2b-9c11-5d6f7a8b9c0d');
+        self::assertInstanceOf(Operation::class, $operacion);
+        self::assertSame('u-1', $operacion->uid);
+        self::assertSame(1, $operacion->ambiente);
+        self::assertSame('autorizado', $operacion->estadoAutorizacion);
+        self::assertSame('2026-10-07T10:01:00', $operacion->fechaConsulta);
+    }
+
+    public function testLeePerfilCompletoYToleraCamposNuevos(): void
+    {
+        $transport = new FakeTransport(new TransportResponse(
+            200,
+            '{"datos":{"identificacion":"0123456789001","razonSocial":"Empresa","nombreComercial":null,'
+            . '"direccionMatriz":"Matriz","direccionEstablecimiento":"Local","codigoEstablecimiento":"001",'
+            . '"codigoPuntoEmision":"002","moneda":"DOLAR","obligadoContabilidad":true,"correo":null,'
+            . '"telefono":null,"ciudad":"Quito","provincia":"Pichincha","pais":"Ecuador","logo":null,'
+            . '"campoNuevo":"x"}}'
+        ));
+        $perfil = $this->cliente($transport)->getPerfil('0123456789001');
+        self::assertInstanceOf(PerfilEmisor::class, $perfil);
+        self::assertSame('Local', $perfil->direccionEstablecimiento);
+        self::assertSame('001', $perfil->codigoEstablecimiento);
+        self::assertSame('002', $perfil->codigoPuntoEmision);
+        self::assertSame('DOLAR', $perfil->moneda);
+        self::assertTrue($perfil->obligadoContabilidad);
+        self::assertSame('Ecuador', $perfil->pais);
+        self::assertStringEndsWith('/v1/contribuyentes/0123456789001/perfil', $transport->peticiones[0]['url']);
+    }
+
+    public function testListadoDeRecibidosRetirado(): void
+    {
+        self::assertFalse(method_exists(EcuafactClient::class, 'listarRecibidos'));
+        self::assertFalse(method_exists(EcuafactClient::class, 'listarRecibidosEn'));
+        self::assertFalse(method_exists(\Ecuafact\Sdk\EcuafactContribuyente::class, 'listarRecibidos'));
     }
 
     public function testEnviarCorreo(): void
@@ -298,7 +346,14 @@ final class EcuafactClientTest extends TestCase
             new TransportResponse(429, '{"codigo":"rate_limited","mensaje":"lento"}', ['Retry-After' => '0']),
             new TransportResponse(202, '{"codigo":"200","idOperacion":"ok-429"}')
         );
-        $resultado = $this->cliente($transport)->emitirEn('0123456789', $this->comprobante(), 'K-429');
+        // Desde 2026-10-07 el 429/104 solo se reintenta con retryRateLimited.
+        $client = new EcuafactClient(new EcuafactClientOptions(
+            baseAddress: 'https://api.example/',
+            apiKey: 'clave.secreta',
+            transport: $transport,
+            retryRateLimited: true,
+        ));
+        $resultado = $client->emitirEn('0123456789', $this->comprobante(), 'K-429');
         self::assertSame('ok-429', $resultado->admission->idOperacion);
         self::assertCount(2, $transport->peticiones);
     }

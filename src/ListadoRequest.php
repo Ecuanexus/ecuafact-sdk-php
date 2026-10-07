@@ -4,26 +4,41 @@ declare(strict_types=1);
 
 namespace Ecuafact\Sdk;
 
-/** Filtros del listado de comprobantes emitidos o recibidos. */
+/**
+ * Filtros del listado de comprobantes emitidos.
+ *
+ * `desde` y `hasta` son fechas de calendario de Ecuador con formato `Y-m-d`. El API las interpreta
+ * en hora de Ecuador (UTC-5). Un string se envia tal cual; un \DateTimeInterface se formatea como
+ * `Y-m-d` en su propia zona horaria (la fecha de calendario que ves en ese objeto).
+ */
 final class ListadoRequest
 {
+    /** Fecha de calendario `Y-m-d`. */
     public ?string $desde = null;
+    /** Fecha de calendario `Y-m-d`. */
     public ?string $hasta = null;
     public ?string $codDoc = null;
     public ?string $buscar = null;
     public ?int $pagina = null;
     public ?int $tamanoPagina = null;
 
-    public function desde(?string $value): self
+    /** Acepta `Y-m-d` o una fecha (\DateTimeInterface, se formatea como `Y-m-d`). */
+    public function desde(\DateTimeInterface|string|null $value): self
     {
-        $this->desde = $value;
+        $this->desde = self::fecha($value);
         return $this;
     }
 
-    public function hasta(?string $value): self
+    /** Acepta `Y-m-d` o una fecha (\DateTimeInterface, se formatea como `Y-m-d`). */
+    public function hasta(\DateTimeInterface|string|null $value): self
     {
-        $this->hasta = $value;
+        $this->hasta = self::fecha($value);
         return $this;
+    }
+
+    private static function fecha(\DateTimeInterface|string|null $value): ?string
+    {
+        return $value instanceof \DateTimeInterface ? $value->format('Y-m-d') : $value;
     }
 
     public function codDoc(?string $value): self

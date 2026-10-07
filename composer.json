@@ -25,6 +25,10 @@
         "ext-curl": "*",
         "ext-json": "*"
     },
+    "suggest": {
+        "psr/http-client": "Para usar Psr18Transport con tu cliente PSR-18 (Guzzle, Symfony HttpClient).",
+        "psr/http-factory": "Fabricas PSR-17 que necesita Psr18Transport."
+    },
     "require-dev": {
         "phpunit/phpunit": "^11.5"
     },

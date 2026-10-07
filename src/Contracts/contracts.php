@@ -9,6 +9,11 @@ namespace Ecuafact\Sdk\Contracts;
 
 // ---------------------------------------------------------------------------
 // Solicitud
+//
+// Importes, cantidades, precios y tarifas aceptan float o string decimal
+// ('11.50'). El string se envia como numero JSON literal, sin pasar por float:
+// es la forma exacta. Un float se envia con 15 digitos significativos, de modo
+// que 0.1 + 0.2 viaja como 0.3.
 // ---------------------------------------------------------------------------
 
 class CampoAdicional
@@ -21,18 +26,18 @@ class Impuesto
 {
     public ?string $codigo = null;
     public ?string $codigoPorcentaje = null;
-    public ?float $tarifa = null;
-    public ?float $baseImponible = null;
-    public ?float $valor = null;
-    public ?float $descuentoAdicional = null;
-    public ?float $valorDevolucionIva = null;
+    public float|string|null $tarifa = null;
+    public float|string|null $baseImponible = null;
+    public float|string|null $valor = null;
+    public float|string|null $descuentoAdicional = null;
+    public float|string|null $valorDevolucionIva = null;
 }
 
 class Pago
 {
     public ?string $formaPago = null;
-    public ?float $total = null;
-    public ?float $plazo = null;
+    public float|string|null $total = null;
+    public float|string|null $plazo = null;
     public ?string $unidadTiempo = null;
 }
 
@@ -44,11 +49,11 @@ class Detalle
     public ?string $codigoAdicional = null;
     public ?string $descripcion = null;
     public ?string $unidadMedida = null;
-    public ?float $cantidad = null;
-    public ?float $precioUnitario = null;
-    public ?float $precioSinSubsidio = null;
-    public ?float $descuento = null;
-    public ?float $precioTotalSinImpuesto = null;
+    public float|string|null $cantidad = null;
+    public float|string|null $precioUnitario = null;
+    public float|string|null $precioSinSubsidio = null;
+    public float|string|null $descuento = null;
+    public float|string|null $precioTotalSinImpuesto = null;
     /** @var Impuesto[] */
     public ?array $impuestos = null;
     /** @var CampoAdicional[] */
@@ -58,7 +63,7 @@ class Detalle
 class Motivo
 {
     public ?string $razon = null;
-    public ?float $valor = null;
+    public float|string|null $valor = null;
 }
 
 class Destinatario
@@ -78,31 +83,31 @@ class ImpuestoDocSustento
 {
     public ?string $codImpuestoDocSustento = null;
     public ?string $codigoPorcentaje = null;
-    public ?float $baseImponible = null;
-    public ?float $tarifa = null;
-    public ?float $valorImpuesto = null;
+    public float|string|null $baseImponible = null;
+    public float|string|null $tarifa = null;
+    public float|string|null $valorImpuesto = null;
 }
 
 class Dividendo
 {
     public ?string $fechaPagoDiv = null;
-    public ?float $imRentaSoc = null;
+    public float|string|null $imRentaSoc = null;
     public ?string $ejerFisUtDiv = null;
 }
 
 class CompraCajBanano
 {
     public ?string $numCajBan = null;
-    public ?float $precCajBan = null;
+    public float|string|null $precCajBan = null;
 }
 
 class RetencionLinea
 {
     public ?string $codigo = null;
     public ?string $codigoRetencion = null;
-    public ?float $baseImponible = null;
-    public ?float $porcentajeRetener = null;
-    public ?float $valorRetenido = null;
+    public float|string|null $baseImponible = null;
+    public float|string|null $porcentajeRetener = null;
+    public float|string|null $valorRetenido = null;
     public ?Dividendo $dividendos = null;
     public ?CompraCajBanano $compraCajBanano = null;
 }
@@ -111,16 +116,16 @@ class DetalleImpuestoReembolso
 {
     public ?string $codigo = null;
     public ?string $codigoPorcentaje = null;
-    public ?float $tarifa = null;
-    public ?float $baseImponibleReembolso = null;
-    public ?float $impuestoReembolso = null;
+    public float|string|null $tarifa = null;
+    public float|string|null $baseImponibleReembolso = null;
+    public float|string|null $impuestoReembolso = null;
 }
 
 class CompensacionReembolso
 {
     public ?string $codigo = null;
-    public ?float $tarifa = null;
-    public ?float $valor = null;
+    public float|string|null $tarifa = null;
+    public float|string|null $valor = null;
 }
 
 class ReembolsoDetalle
@@ -155,11 +160,11 @@ class DocsSustento
     public ?string $aplicConvDobTrib = null;
     public ?string $pagExtSujRetNorLeg = null;
     public ?string $pagoRegFis = null;
-    public ?float $totalSinImpuestos = null;
-    public ?float $totalComprobantesReembolso = null;
-    public ?float $totalBaseImponibleReembolso = null;
-    public ?float $totalImpuestoReembolso = null;
-    public ?float $importeTotal = null;
+    public float|string|null $totalSinImpuestos = null;
+    public float|string|null $totalComprobantesReembolso = null;
+    public float|string|null $totalBaseImponibleReembolso = null;
+    public float|string|null $totalImpuestoReembolso = null;
+    public float|string|null $importeTotal = null;
     /** @var ImpuestoDocSustento[] */
     public ?array $impuestosDocSustento = null;
     /** @var RetencionLinea[] */
@@ -173,16 +178,16 @@ class DocsSustento
 class Compensacion
 {
     public ?string $codigo = null;
-    public ?float $tarifa = null;
-    public ?float $valor = null;
+    public float|string|null $tarifa = null;
+    public float|string|null $valor = null;
 }
 
 class RetencionFacturaLinea
 {
     public ?string $codigo = null;
     public ?string $codigoPorcentaje = null;
-    public ?float $tarifa = null;
-    public ?float $valor = null;
+    public float|string|null $tarifa = null;
+    public float|string|null $valor = null;
 }
 
 class DestinoSustitutiva
@@ -210,7 +215,7 @@ class InfoSustitutivaGuia
 class RubroTercero
 {
     public ?string $concepto = null;
-    public ?float $total = null;
+    public float|string|null $total = null;
 }
 
 class TipoNegociable
@@ -246,24 +251,24 @@ class InfoDocumento
     public ?string $razonSocialProveedor = null;
     public ?string $identificacionProveedor = null;
     public ?string $direccionProveedor = null;
-    public ?float $totalSinImpuestos = null;
+    public float|string|null $totalSinImpuestos = null;
     public ?string $moneda = null;
-    public ?float $totalDescuento = null;
+    public float|string|null $totalDescuento = null;
     /** @var Impuesto[] */
     public ?array $totalConImpuestos = null;
-    public ?float $importeTotal = null;
-    public ?float $propina = null;
+    public float|string|null $importeTotal = null;
+    public float|string|null $propina = null;
     /** @var Pago[] */
     public ?array $pagos = null;
     public ?string $codDocModificado = null;
     public ?string $numDocModificado = null;
     public ?string $fechaEmisionDocSustento = null;
-    public ?float $totalDocumentoSustento = null;
+    public float|string|null $totalDocumentoSustento = null;
     public ?string $motivo = null;
-    public ?float $valorModificacion = null;
+    public float|string|null $valorModificacion = null;
     /** @var Impuesto[] */
     public ?array $impuestos = null;
-    public ?float $valorTotal = null;
+    public float|string|null $valorTotal = null;
     public ?string $dirPartida = null;
     public ?string $razonSocialTransportista = null;
     public ?string $tipoIdentificacionTransportista = null;
@@ -290,20 +295,20 @@ class InfoDocumento
     public ?string $paisDestino = null;
     public ?string $paisAdquisicion = null;
     public ?string $guiaRemision = null;
-    public ?float $totalSubsidio = null;
+    public float|string|null $totalSubsidio = null;
     public ?string $incoTermTotalSinImpuestos = null;
     public ?string $codDocReembolso = null;
-    public ?float $totalComprobantesReembolso = null;
-    public ?float $totalBaseImponibleReembolso = null;
-    public ?float $totalImpuestoReembolso = null;
+    public float|string|null $totalComprobantesReembolso = null;
+    public float|string|null $totalBaseImponibleReembolso = null;
+    public float|string|null $totalImpuestoReembolso = null;
     /** @var Compensacion[] */
     public ?array $compensaciones = null;
-    public ?float $fleteInternacional = null;
-    public ?float $seguroInternacional = null;
-    public ?float $gastosAduaneros = null;
-    public ?float $gastosTransporteOtros = null;
-    public ?float $valorRetIva = null;
-    public ?float $valorRetRenta = null;
+    public float|string|null $fleteInternacional = null;
+    public float|string|null $seguroInternacional = null;
+    public float|string|null $gastosAduaneros = null;
+    public float|string|null $gastosTransporteOtros = null;
+    public float|string|null $valorRetIva = null;
+    public float|string|null $valorRetRenta = null;
     /** @var ReembolsoDetalle[] */
     public ?array $reembolsos = null;
     /** @var RetencionFacturaLinea[] */
@@ -357,6 +362,7 @@ class Admission
 class Operation
 {
     public ?string $idOperacion = null;
+    public ?string $uid = null;
     public ?int $ambiente = null;
     public ?string $codDoc = null;
     public ?string $estado = null;
@@ -368,6 +374,44 @@ class Operation
     public ?string $fechaAutorizacion = null;
     public ?string $fechaConsulta = null;
     public ?string $codigoErrorConsulta = null;
+
+    /** `estado` tipado; un valor nuevo del API se lee como EstadoOperacion::Desconocido. */
+    public function estadoOperacion(): EstadoOperacion
+    {
+        return EstadoOperacion::desdeValor($this->estado);
+    }
+
+    /** `estadoAutorizacion` tipado; un valor nuevo se lee como EstadoAutorizacion::Desconocido. */
+    public function estadoAutorizacionTipado(): EstadoAutorizacion
+    {
+        return EstadoAutorizacion::desdeValor($this->estadoAutorizacion);
+    }
+
+    /** `codDoc` tipado; null si el codigo no se reconoce. */
+    public function tipoComprobante(): ?TipoComprobante
+    {
+        return TipoComprobante::desdeValor($this->codDoc);
+    }
+
+    /**
+     * True cuando la operacion ya no cambiara: `estadoAutorizacion` autorizado o error,
+     * o `estado` rechazado o cancelado.
+     */
+    public function esFinal(): bool
+    {
+        $autorizacion = $this->estadoAutorizacionTipado();
+        if ($autorizacion === EstadoAutorizacion::Autorizado || $autorizacion === EstadoAutorizacion::Error) {
+            return true;
+        }
+        $estado = $this->estadoOperacion();
+        return $estado === EstadoOperacion::Rechazado || $estado === EstadoOperacion::Cancelado;
+    }
+
+    /** True cuando `estadoAutorizacion` es autorizado. */
+    public function esAutorizado(): bool
+    {
+        return $this->estadoAutorizacionTipado() === EstadoAutorizacion::Autorizado;
+    }
 }
 
 class QuotaBucket
@@ -401,6 +445,7 @@ class Contexto
     public ?array $contribuyentes = null;
 }
 
+/** Fila del listado de emitidos. `total` se lee como float (precision de double). */
 class Comprobante
 {
     public ?string $claveAcceso = null;
@@ -415,6 +460,18 @@ class Comprobante
     public ?string $codigoError = null;
     public ?string $fechaExpress = null;
     public ?int $idExpressDocument = null;
+
+    /** `estadoAutorizacion` tipado; un valor nuevo se lee como EstadoAutorizacion::Desconocido. */
+    public function estadoAutorizacionTipado(): EstadoAutorizacion
+    {
+        return EstadoAutorizacion::desdeValor($this->estadoAutorizacion);
+    }
+
+    /** `codDoc` tipado; null si el codigo no se reconoce. */
+    public function tipoComprobante(): ?TipoComprobante
+    {
+        return TipoComprobante::desdeValor($this->codDoc);
+    }
 }
 
 class PaginaComprobantes
@@ -548,10 +605,16 @@ class PerfilEmisor
     public ?string $razonSocial = null;
     public ?string $nombreComercial = null;
     public ?string $direccionMatriz = null;
+    public ?string $direccionEstablecimiento = null;
+    public ?string $codigoEstablecimiento = null;
+    public ?string $codigoPuntoEmision = null;
+    public ?string $moneda = null;
+    public bool $obligadoContabilidad = false;
     public ?string $correo = null;
     public ?string $telefono = null;
     public ?string $ciudad = null;
     public ?string $provincia = null;
+    public ?string $pais = null;
     public ?string $logo = null;
 }
 
