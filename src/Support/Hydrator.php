@@ -13,10 +13,15 @@ use Ecuafact\Sdk\EcuafactSdkException;
  * como string en importes `float|string`), int y bool desde string, y null al valor por defecto
  * cuando la propiedad no admite null. Un valor que no se puede convertir lanza
  * {@see EcuafactSdkException}, nunca un TypeError.
+ *
+ * Un campo que el modelo no declara se conserva en su propiedad publica `extra` (arreglo
+ * asociativo; los objetos JSON anidados quedan como arreglos asociativos).
  */
 final class Hydrator
 {
     private const DECIMAL = '/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/D';
+    /** Propiedad que guarda los campos no declarados. */
+    public const EXTRA = 'extra';
 
     /**
      * @template T of object
@@ -44,18 +49,49 @@ final class Hydrator
         }
         $reflection = new \ReflectionClass($class);
         $instance = $reflection->newInstanceWithoutConstructor();
+        $conExtra = self::tieneExtra($reflection);
+        $extra = [];
         foreach (get_object_vars($data) as $key => $value) {
             $key = (string) $key;
-            if (!$reflection->hasProperty($key)) {
-                continue;
-            }
-            $property = $reflection->getProperty($key);
-            if (!$property->isPublic() || $property->isStatic()) {
+            $property = $reflection->hasProperty($key) ? $reflection->getProperty($key) : null;
+            if ($property === null || !$property->isPublic() || $property->isStatic()
+                || ($conExtra && $key === self::EXTRA)) {
+                if ($conExtra) {
+                    $extra[$key] = self::aArreglo($value);
+                }
                 continue;
             }
             $property->setValue($instance, self::coerce($class, $property, $value));
         }
+        if ($conExtra) {
+            $reflection->getProperty(self::EXTRA)->setValue($instance, $extra);
+        }
         return $instance;
+    }
+
+    private static function tieneExtra(\ReflectionClass $reflection): bool
+    {
+        if (!$reflection->hasProperty(self::EXTRA)) {
+            return false;
+        }
+        $property = $reflection->getProperty(self::EXTRA);
+        $type = $property->getType();
+        return $property->isPublic() && !$property->isStatic()
+            && $type instanceof \ReflectionNamedType && $type->getName() === 'array';
+    }
+
+    /** Convierte objetos JSON (stdClass) a arreglos asociativos, en profundidad. */
+    private static function aArreglo(mixed $value): mixed
+    {
+        if (is_object($value)) {
+            $value = get_object_vars($value);
+        }
+        if (is_array($value)) {
+            foreach ($value as $key => $item) {
+                $value[$key] = self::aArreglo($item);
+            }
+        }
+        return $value;
     }
 
     private static function coerce(string $class, \ReflectionProperty $property, mixed $value): mixed

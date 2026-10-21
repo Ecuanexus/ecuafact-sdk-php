@@ -17,6 +17,8 @@ namespace Ecuafact\Sdk;
  *   `A-Z a-z 0-9 . _ -`. El API lo devuelve y el SDK lo expone en `EmisionResultado::$correlationId`
  *   y en las excepciones (`idSeguimiento` o `correlationId`).
  * - `reintentos`: `false` desactiva los reintentos solo en esta llamada.
+ * - `additionalInfo`: valor de la cabecera `X-Additional-Info` solo en esta llamada. Reemplaza al
+ *   `additionalInfo` del cliente. Misma validacion que en {@see EcuafactClientOptions}.
  *
  * PHP no tiene cancelacion cooperativa: para acotar una llamada usa `timeout` o `totalTimeout`.
  *
@@ -26,12 +28,18 @@ final class RequestOptions
 {
     private const CORRELATION_PATTERN = '/^[A-Za-z0-9._-]{1,64}$/D';
 
+    /** Cabecera X-Additional-Info de esta llamada; null usa la del cliente. */
+    public readonly ?string $additionalInfo;
+
     public function __construct(
         public readonly ?float $timeout = null,
         public readonly ?float $totalTimeout = null,
         public readonly ?string $correlationId = null,
         public readonly bool $reintentos = true,
+        ?string $additionalInfo = null,
     ) {
+        // Cadena vacia: no se envia la cabecera en esta llamada (null usa la del cliente).
+        $this->additionalInfo = $additionalInfo === '' ? '' : EcuafactClientOptions::validarAdditionalInfo($additionalInfo);
         if ($timeout !== null && (!is_finite($timeout) || $timeout <= 0)) {
             throw new EcuafactConfigurationException('timeout debe ser mayor que 0 segundos o null.');
         }
@@ -43,5 +51,15 @@ final class RequestOptions
                 'correlationId: de 1 a 64 caracteres, solo letras, digitos y . _ -.'
             );
         }
+    }
+
+    /** @return array<string, mixed> */
+    public function __debugInfo(): array
+    {
+        $info = get_object_vars($this);
+        if ($this->additionalInfo !== null && $this->additionalInfo !== '') {
+            $info['additionalInfo'] = '***';
+        }
+        return $info;
     }
 }

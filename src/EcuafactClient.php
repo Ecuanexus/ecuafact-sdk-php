@@ -41,7 +41,7 @@ use Ecuafact\Sdk\Transport\TransportResponse;
  * {@see EcuafactSdkException} para argumentos invalidos o respuestas no reconocidas.
  *
  * Cada metodo que llama al API acepta como ultimo argumento `?RequestOptions $opciones` (timeout,
- * tope total, X-Correlation-Id y reintentos solo para esa llamada).
+ * tope total, X-Correlation-Id, X-Additional-Info y reintentos solo para esa llamada).
  */
 final class EcuafactClient
 {
@@ -442,6 +442,7 @@ final class EcuafactClient
         if ($opciones?->correlationId !== null) {
             $headers[] = 'X-Correlation-Id: ' . $opciones->correlationId;
         }
+        $this->agregarAdditionalInfo($headers, $opciones);
         $response = $this->requestWithRetry('GET', $url, $headers, null, true, null, $opciones);
         if ($response->status >= 400) {
             throw $this->buildApiException($response, null, $opciones);
@@ -516,6 +517,7 @@ final class EcuafactClient
         if ($opciones?->correlationId !== null) {
             $headers[] = 'X-Correlation-Id: ' . $opciones->correlationId;
         }
+        $this->agregarAdditionalInfo($headers, $opciones);
 
         // Solo se reintentan solicitudes idempotentes: GET, o POST/PUT con Idempotency-Key.
         $retryable = $method === 'GET' || ($idempotencyKey !== null && ($method === 'POST' || $method === 'PUT'));
@@ -525,6 +527,19 @@ final class EcuafactClient
         }
         $correlationId = $response->header('X-Correlation-Id') ?? $opciones?->correlationId;
         return $this->parse($response->body, $flat, $modelClass, $list);
+    }
+
+    /**
+     * Agrega X-Additional-Info: el valor de la llamada reemplaza al del cliente; null no la envia.
+     *
+     * @param string[] $headers
+     */
+    private function agregarAdditionalInfo(#[\SensitiveParameter] array &$headers, ?RequestOptions $opciones): void
+    {
+        $valor = $opciones?->additionalInfo ?? $this->options->additionalInfo;
+        if ($valor !== null && $valor !== '') {
+            $headers[] = 'X-Additional-Info: ' . $valor;
+        }
     }
 
     /** @param string[] $headers */

@@ -66,8 +66,10 @@ final class Serialization
         if (is_object($value)) {
             $amounts = self::amountProperties($value);
             $out = [];
+            $esModelo = !$value instanceof \stdClass;
             foreach (get_object_vars($value) as $key => $item) {
-                if ($item === null) {
+                // `extra` guarda campos leidos del API que el modelo no declara; no se envia.
+                if ($item === null || ($esModelo && $key === Hydrator::EXTRA)) {
                     continue;
                 }
                 if (is_string($item) && isset($amounts[$key])) {

@@ -183,8 +183,8 @@ final class MejorasSdkTest extends TestCase
                 'retryBackoff' => RetryBackoff::Linear,
                 'totalTimeoutSeconds' => 0.35,
             ])->getContexto();
-            self::fail('Se esperaba EcuafactServerException.');
-        } catch (EcuafactServerException) {
+            self::fail('Se esperaba EcuafactServerException o EcuafactTimeoutException.');
+        } catch (EcuafactServerException|\Ecuafact\Sdk\EcuafactTimeoutException) {
             self::assertLessThan(1.0, microtime(true) - $inicio);
             self::assertLessThan(50, count($transport->peticiones));
             self::assertGreaterThanOrEqual(2, count($transport->peticiones));

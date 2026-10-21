@@ -344,6 +344,9 @@ class ComprobanteRequest
 
 class ApiError
 {
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
     public ?string $codigo = null;
     public ?string $mensaje = null;
     /** @var string[] */
@@ -352,6 +355,9 @@ class ApiError
 
 class Admission
 {
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
     public ?string $codigo = null;
     public ?string $mensaje = null;
     public ?string $idOperacion = null;
@@ -361,6 +367,9 @@ class Admission
 
 class Operation
 {
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
     public ?string $idOperacion = null;
     public ?string $uid = null;
     public ?int $ambiente = null;
@@ -416,6 +425,9 @@ class Operation
 
 class QuotaBucket
 {
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
     public ?int $limiteDocumentos = null;
     public ?int $reservados = null;
     public ?int $consumidos = null;
@@ -429,6 +441,9 @@ class QuotaBucket
 
 class Contribuyente
 {
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
     public ?string $identificacion = null;
     public ?string $identificacionCompleta = null;
     public ?bool $puedeEmitir = null;
@@ -439,6 +454,9 @@ class Contribuyente
 
 class Contexto
 {
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
     public ?string $idCliente = null;
     public ?string $nombre = null;
     /** @var Contribuyente[] */
@@ -448,6 +466,9 @@ class Contexto
 /** Fila del listado de emitidos. `total` se lee como float (precision de double). */
 class Comprobante
 {
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
     public ?string $claveAcceso = null;
     public ?string $numeroDocumento = null;
     public ?string $codDoc = null;
@@ -476,6 +497,9 @@ class Comprobante
 
 class PaginaComprobantes
 {
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
     /** @var Comprobante[] */
     public ?array $comprobantes = null;
     public ?int $pagina = null;
@@ -489,12 +513,18 @@ class PaginaComprobantes
 
 class RepresentanteLegalConsulta
 {
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
     public ?string $identificacion = null;
     public ?string $nombre = null;
 }
 
 class EstablecimientoConsulta
 {
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
     public ?string $numero = null;
     public ?string $nombreComercial = null;
     public ?string $tipo = null;
@@ -505,6 +535,9 @@ class EstablecimientoConsulta
 
 class EstadoTributario
 {
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
     public ?bool $tieneDeuda = null;
     public ?bool $tieneImpugnacion = null;
     public ?bool $tieneRemision = null;
@@ -516,6 +549,9 @@ class EstadoTributario
 
 class ContribuyenteConsulta
 {
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
     public ?string $identificacion = null;
     public ?string $tipoIdentificacion = null;
     public ?string $nombreCompleto = null;
@@ -543,6 +579,9 @@ class ContribuyenteConsulta
 
 class BusquedaContribuyente
 {
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
     public ?string $identificacion = null;
     public ?string $tipoIdentificacion = null;
     public ?string $nombreCompleto = null;
@@ -553,6 +592,9 @@ class BusquedaContribuyente
 
 class EstablecimientosContribuyente
 {
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
     public ?string $ruc = null;
     public ?string $filtro = null;
     public ?int $cantidad = null;
@@ -562,6 +604,9 @@ class EstablecimientosContribuyente
 
 class ValidacionIdentificacion
 {
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
     public ?string $entrada = null;
     public ?string $normalizado = null;
     public ?bool $valido = null;
@@ -574,6 +619,9 @@ class ValidacionIdentificacion
 
 class ClaveAccesoDecodificada
 {
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
     public ?string $entrada = null;
     public ?string $normalizada = null;
     public ?bool $valido = null;
@@ -601,6 +649,9 @@ class ArchivoComprobante
 
 class PerfilEmisor
 {
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
     public ?string $identificacion = null;
     public ?string $razonSocial = null;
     public ?string $nombreComercial = null;
@@ -625,12 +676,18 @@ class CorreoSolicitud
 
 class CorreoEnviado
 {
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
     public string $claveAcceso = '';
     public string $destinatario = '';
 }
 
 class CatalogoItem
 {
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
     public string $codigo = '';
     public string $nombre = '';
     public ?float $tarifa = null;

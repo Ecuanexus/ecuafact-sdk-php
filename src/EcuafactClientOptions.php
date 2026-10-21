@@ -17,8 +17,12 @@ use Ecuafact\Sdk\Transport\TransportInterface;
  *   `maxRetryDelaySeconds`, `retryRateLimited` (429/104; el 429/501 de cupo nunca se reintenta),
  *   `retryableStatusCodes`, `retryBaseDelaySeconds`, `retryBackoff`, `retryJitterSeconds` y
  *   `totalTimeoutSeconds` (tope de toda la llamada, incluidos reintentos).
- * - Conexion (solo con el transporte cURL por defecto): `timeout`, `connectTimeout`, `proxy`,
- *   `caInfo`, `verifyPeer` y `curlOptions`. Con `transport` usas tu propio transporte.
+ * - Conexion (solo con el transporte cURL por defecto): `timeout` (por intento; 30 s por defecto),
+ *   `connectTimeout`, `proxy`, `caInfo`, `verifyPeer` y `curlOptions`. Con `transport` usas tu
+ *   propio transporte.
+ * - `additionalInfo`: valor de la cabecera `X-Additional-Info` en todas las solicitudes. ASCII
+ *   imprimible, sin espacios al inicio ni al final, maximo 256 caracteres. Null o vacio no la envia.
+ *   No aparece en `var_dump` ni en las excepciones.
  *
  * Una opcion invalida lanza {@see EcuafactConfigurationException}.
  *
@@ -35,6 +39,11 @@ final class EcuafactClientOptions
     /** @var int[] */
     public readonly array $retryableStatusCodes;
     public readonly RetryBackoff $retryBackoff;
+    /** Valor de la cabecera X-Additional-Info en todas las solicitudes; null no la envia. */
+    public readonly ?string $additionalInfo;
+
+    /** Longitud maxima de X-Additional-Info. */
+    public const ADDITIONAL_INFO_MAX = 256;
 
     /**
      * @param int[]|null $retryableStatusCodes
@@ -44,7 +53,7 @@ final class EcuafactClientOptions
         string|false|null $baseAddress = null,
         #[\SensitiveParameter] string|false|null $apiKey = null,
         public readonly ?string $identificacion = null,
-        public readonly float $timeout = 100.0,
+        public readonly float $timeout = 30.0,
         public readonly string $userAgent = 'Ecuafact.Sdk/1.0',
         public readonly bool $retryTransientFailures = true,
         public readonly int $maxAttempts = 3,
@@ -62,7 +71,9 @@ final class EcuafactClientOptions
         public readonly ?string $caInfo = null,
         public readonly bool $verifyPeer = true,
         public readonly array $curlOptions = [],
+        ?string $additionalInfo = null,
     ) {
+        $this->additionalInfo = self::validarAdditionalInfo($additionalInfo);
         $resolved = self::resolveApiKey($apiKey);
         $this->credencial = static fn (): string => $resolved;
         $this->baseAddress = self::resolveBaseAddress($baseAddress);
@@ -132,6 +143,9 @@ final class EcuafactClientOptions
         if ($this->proxy !== null) {
             $info['proxy'] = '***';
         }
+        if ($this->additionalInfo !== null) {
+            $info['additionalInfo'] = '***';
+        }
         return $info;
     }
 
@@ -192,6 +206,34 @@ final class EcuafactClientOptions
             );
         }
         return $baseAddress;
+    }
+
+    /**
+     * Valida el valor de X-Additional-Info. Null o vacio devuelve null (no se envia la cabecera).
+     *
+     * @internal Lo usan EcuafactClientOptions y RequestOptions.
+     */
+    public static function validarAdditionalInfo(?string $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if (strlen($value) > self::ADDITIONAL_INFO_MAX) {
+            throw new EcuafactConfigurationException(
+                'additionalInfo (cabecera X-Additional-Info) admite como maximo ' . self::ADDITIONAL_INFO_MAX . ' caracteres.'
+            );
+        }
+        if (preg_match('/^[\x20-\x7E]+$/D', $value) !== 1) {
+            throw new EcuafactConfigurationException(
+                'additionalInfo (cabecera X-Additional-Info) solo admite caracteres ASCII imprimibles, sin tildes, enes ni saltos de linea.'
+            );
+        }
+        if (trim($value) !== $value) {
+            throw new EcuafactConfigurationException(
+                'additionalInfo (cabecera X-Additional-Info) no puede tener espacios al inicio ni al final.'
+            );
+        }
+        return $value;
     }
 
     private static function requireNonNegative(string $name, float $value): void

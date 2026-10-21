@@ -112,7 +112,7 @@ y los estados de `retryableStatusCodes` (`408, 425, 500, 502, 503, 504`).
 | `baseAddress` | `ECUAFACT_BASE_URL` | URL base del despliegue, sin `/v1` |
 | `apiKey` | `ECUAFACT_API_KEY` | Credencial `X-Api-Key`; no se muestra en `var_dump`, `print_r` ni trazas |
 | `identificacion` | `null` | Contribuyente por defecto (opcional) |
-| `timeout` | `100.0` | Tiempo maximo por intento, en segundos (admite fracciones) |
+| `timeout` | `30.0` | Tiempo maximo por intento, en segundos (admite fracciones) |
 | `userAgent` | `Ecuafact.Sdk/1.0` | User-Agent |
 | `retryTransientFailures` | `true` | `false` desactiva todos los reintentos |
 | `maxAttempts` | `3` | Intentos por solicitud (minimo 1) |
@@ -130,11 +130,17 @@ y los estados de `retryableStatusCodes` (`408, 425, 500, 502, 503, 504`).
 | `caInfo` | `null` | Bundle de CA en PEM (solo cURL) |
 | `verifyPeer` | `true` | `false` desactiva la validacion TLS; solo pruebas locales (solo cURL) |
 | `curlOptions` | `[]` | Opciones `CURLOPT_*` extra (solo cURL) |
+| `additionalInfo` | `null` | Cabecera `X-Additional-Info` en todas las solicitudes: ASCII imprimible, sin espacios al inicio/fin, maximo 256; `null`/`''` no la envia; no aparece en `var_dump` |
 
 El transporte cURL reutiliza el mismo handle (keep-alive). Para usar Guzzle o Symfony HttpClient,
 instala `psr/http-client` y `psr/http-factory` y pasa
 `transport: new Psr18Transport($cliente, $requestFactory, $streamFactory)`; el timeout, el proxy y TLS
-los configura tu cliente.
+los configura tu cliente. `Psr18Transport` distingue timeout de error de conexion por el tipo de
+excepcion (errno 28 de cURL en `getHandlerContext()` de Guzzle, `TimeoutExceptionInterface` de
+Symfony) y usa el texto del mensaje solo como respaldo.
+
+Cada modelo de respuesta guarda en `extra` (`array`) los campos que el API devuelve y el modelo no
+declara; `extra` no se envia al API.
 
 ## Opciones por llamada
 
@@ -149,12 +155,14 @@ $opciones = new RequestOptions(
     totalTimeout: 45.0,       // tope de la llamada, incluidos reintentos
     correlationId: 'PED-2026-0457', // cabecera X-Correlation-Id: 1-64 de A-Z a-z 0-9 . _ -
     reintentos: true,         // false: sin reintentos en esta llamada
+    additionalInfo: 'erp=MiERP/4.2; caja=3', // cabecera X-Additional-Info; reemplaza a la del cliente
 );
 $resultado = $client->emitirEn('0123456789', $comprobante, 'FACTURA-2026-0001', $opciones);
 echo $resultado->correlationId; // la correlacion que devolvio el API
 ```
 
-- Un `correlationId` invalido o un tiempo `<= 0` lanza `EcuafactConfigurationException`.
+- Un `correlationId` invalido, un `additionalInfo` invalido o un tiempo `<= 0` lanza
+  `EcuafactConfigurationException`.
 - La correlacion queda en `EmisionResultado::$correlationId`, en `EcuafactApiException::$idSeguimiento`
   y en `EcuafactConnectionException::$correlationId` / `EcuafactTimeoutException::$correlationId`.
 - `timeout` por llamada se aplica con el transporte cURL (o uno que implemente
@@ -259,6 +267,14 @@ if ($evento->eventType === TipoEventoWebhook::DocumentoAutorizado) {
 
 `WebhookSignature::verify($secretos, $cabecera, $cuerpo)` devuelve `false` (nunca lanza) ante una
 cabecera malformada, vencida o con firma distinta.
+
+## Cambios en v1.0.0-beta3
+
+- Opcion `additionalInfo` para enviar la cabecera `X-Additional-Info` (texto del integrador que el API registra en
+  sus logs para soporte; ASCII imprimible, sin espacios al inicio o al final, maximo 256 caracteres), en el
+  cliente y por llamada. No aparece en errores ni en la representacion de las opciones.
+- **Cambio de comportamiento:** el tiempo maximo por intento por defecto (`timeout`) baja de 100 a 30 segundos.
+  Si tus llamadas tardan mas, fija el valor de forma explicita.
 
 ## Documentacion
 
