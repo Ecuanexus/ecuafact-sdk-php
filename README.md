@@ -60,7 +60,7 @@ $ride = $ruc->descargarRide($claveAcceso);
 $perfil = $ruc->actualizarLogo(file_get_contents('logo.png'), 'image/png', 'logo.png');
 ```
 
-La vista expone `emitir`, `listarEmitidos`, `iterarEmitidos`, `descargarRide`, `descargarXml`,
+La vista expone `emitir`, `validar`, `listarEmitidos`, `iterarEmitidos`, `descargarRide`, `descargarXml`,
 `enviarCorreo`, `getPerfil`, `actualizarPerfil`, `actualizarLogo`, `esperarResultado` y `getConsumo`.
 
 ## Variables de entorno
@@ -96,9 +96,25 @@ Al reintentar, **reutiliza la clave devuelta**. La correlacion queda en `resulta
 
 `getOperacion`, `consultarOperacion` y `esperarResultado` exigen un `idOperacion` UUID.
 
+## Validar sin emitir
+
+`validar($comprobante)` y `validarEn($identificacion, $comprobante)` aplican las reglas de la emision sin
+emitir, sin consumir cupo y sin `Idempotency-Key`. Devuelven `ValidacionResultado` (`valido`, `codigo`,
+`mensaje`, `errores`, `correlationId`).
+
+```php
+$validacion = $client->validarEn('0123456789', $comprobante);
+if (!$validacion->valido) {          // 422 con codigo 302: no lanza
+    print_r($validacion->errores);
+}
+```
+
+Cualquier otro error lanza la excepcion habitual (por ejemplo `EcuafactAuthException` con 403/`103`).
+Como no tiene efectos, se reintenta igual que un GET.
+
 ## Reintentos
 
-Se reintentan solo solicitudes idempotentes (GET, o POST/PUT con `Idempotency-Key`) ante errores de red
+Se reintentan solo solicitudes idempotentes (GET, `validar`/`validarEn`, o POST/PUT con `Idempotency-Key`) ante errores de red
 y los estados de `retryableStatusCodes` (`408, 425, 500, 502, 503, 504`).
 
 - `429` con `codigo` `501` (cupo agotado): **nunca** se reintenta.
@@ -267,6 +283,13 @@ if ($evento->eventType === TipoEventoWebhook::DocumentoAutorizado) {
 
 `WebhookSignature::verify($secretos, $cabecera, $cuerpo)` devuelve `false` (nunca lanza) ante una
 cabecera malformada, vencida o con firma distinta.
+
+## Cambios en v1.0.0-beta4
+
+- `validar` y `validarEn` (y `validar` en la vista `para()`): validan un comprobante sin emitirlo
+  (`POST /v1/contribuyentes/{identificacion}/comprobantes/validar`) y devuelven `ValidacionResultado`. Un
+  comprobante invalido (422/`302`) devuelve `valido = false` sin lanzar; el resto de errores lanza como siempre.
+  No envia `Idempotency-Key` y se reintenta como un GET.
 
 ## Cambios en v1.0.0-beta3
 

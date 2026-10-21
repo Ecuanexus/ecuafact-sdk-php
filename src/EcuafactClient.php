@@ -112,6 +112,45 @@ final class EcuafactClient
         return new EmisionResultado($admission, $key, $correlation);
     }
 
+    public function validar(ComprobanteRequest $comprobante, ?RequestOptions $opciones = null): ValidacionResultado
+    {
+        return $this->validarEn($this->requireIdentificacion(), $comprobante, $opciones);
+    }
+
+    /**
+     * Valida un comprobante sin emitirlo (`POST .../comprobantes/validar`): mismas reglas que la emision,
+     * sin `Idempotency-Key`, sin consumir cupo ni emitir. Con 200 devuelve `valido = true`; con 422 y
+     * codigo 302 devuelve `valido = false` y los `errores` (no lanza). Cualquier otro error lanza como el
+     * resto de llamadas (por ejemplo 403/103 con {@see EcuafactAuthException}). Se reintenta como un GET.
+     *
+     * @throws EcuafactApiException|EcuafactSdkException
+     */
+    public function validarEn(
+        string $identificacion,
+        ComprobanteRequest $comprobante,
+        ?RequestOptions $opciones = null
+    ): ValidacionResultado {
+        $path = 'v1/contribuyentes/' . rawurlencode($identificacion) . '/comprobantes/validar';
+        $headers = $this->buildJsonHeaders('application/json; charset=utf-8', null, $opciones);
+        // Sin efectos: se reintenta como un GET aunque no lleve Idempotency-Key.
+        $response = $this->requestWithRetry(
+            'POST',
+            $this->buildUrl($path),
+            $headers,
+            Serialization::encode($comprobante),
+            true,
+            null,
+            $opciones
+        );
+        if ($response->status === 422 && $this->errorCode($response->body) === '302') {
+            return $this->parseValidacion($response, false, $opciones);
+        }
+        if ($response->status >= 400) {
+            throw $this->buildApiException($response, null, $opciones);
+        }
+        return $this->parseValidacion($response, true, $opciones);
+    }
+
     /**
      * Lee la operacion. `$idOperacion` debe ser un UUID (el `idOperacion` de la admision).
      *
@@ -503,6 +542,21 @@ final class EcuafactClient
         ?RequestOptions $opciones = null
     ): mixed {
         $url = $this->buildUrl($path);
+        $headers = $this->buildJsonHeaders($contentType, $idempotencyKey, $opciones);
+
+        // Solo se reintentan solicitudes idempotentes: GET, o POST/PUT con Idempotency-Key.
+        $retryable = $method === 'GET' || ($idempotencyKey !== null && ($method === 'POST' || $method === 'PUT'));
+        $response = $this->requestWithRetry($method, $url, $headers, $payload, $retryable, $idempotencyKey, $opciones);
+        if ($response->status >= 400) {
+            throw $this->buildApiException($response, $idempotencyKey, $opciones);
+        }
+        $correlationId = $response->header('X-Correlation-Id') ?? $opciones?->correlationId;
+        return $this->parse($response->body, $flat, $modelClass, $list);
+    }
+
+    /** @return string[] */
+    private function buildJsonHeaders(?string $contentType, ?string $idempotencyKey, ?RequestOptions $opciones): array
+    {
         $headers = [
             'X-Api-Key: ' . $this->options->apiKey,
             'Accept: application/json',
@@ -518,15 +572,31 @@ final class EcuafactClient
             $headers[] = 'X-Correlation-Id: ' . $opciones->correlationId;
         }
         $this->agregarAdditionalInfo($headers, $opciones);
+        return $headers;
+    }
 
-        // Solo se reintentan solicitudes idempotentes: GET, o POST/PUT con Idempotency-Key.
-        $retryable = $method === 'GET' || ($idempotencyKey !== null && ($method === 'POST' || $method === 'PUT'));
-        $response = $this->requestWithRetry($method, $url, $headers, $payload, $retryable, $idempotencyKey, $opciones);
-        if ($response->status >= 400) {
-            throw $this->buildApiException($response, $idempotencyKey, $opciones);
+    private function parseValidacion(TransportResponse $response, bool $valido, ?RequestOptions $opciones): ValidacionResultado
+    {
+        $data = json_decode($response->body, true);
+        if (!is_array($data) || !isset($data['codigo']) || !is_scalar($data['codigo'])) {
+            throw new EcuafactSdkException('Respuesta del API no reconocida.');
         }
-        $correlationId = $response->header('X-Correlation-Id') ?? $opciones?->correlationId;
-        return $this->parse($response->body, $flat, $modelClass, $list);
+        $errores = [];
+        if (isset($data['errores']) && is_array($data['errores'])) {
+            foreach ($data['errores'] as $error) {
+                if (is_scalar($error)) {
+                    $errores[] = (string) $error;
+                }
+            }
+        }
+        $mensaje = isset($data['mensaje']) && is_scalar($data['mensaje']) ? (string) $data['mensaje'] : '';
+        return new ValidacionResultado(
+            $valido,
+            (string) $data['codigo'],
+            $mensaje,
+            $errores,
+            $response->header('X-Correlation-Id') ?? $opciones?->correlationId
+        );
     }
 
     /**

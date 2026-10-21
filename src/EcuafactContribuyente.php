@@ -44,6 +44,11 @@ final class EcuafactContribuyente
         return $this->client->emitirEn($this->identificacion, $comprobante, $idempotencyKey, $opciones);
     }
 
+    public function validar(ComprobanteRequest $comprobante, ?RequestOptions $opciones = null): ValidacionResultado
+    {
+        return $this->client->validarEn($this->identificacion, $comprobante, $opciones);
+    }
+
     public function listarEmitidos(?ListadoRequest $filtros = null, ?RequestOptions $opciones = null): PaginaComprobantes
     {
         return $this->client->listarEmitidosEn($this->identificacion, $filtros, $opciones);
