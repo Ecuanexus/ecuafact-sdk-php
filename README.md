@@ -286,6 +286,38 @@ if ($evento->eventType === TipoEventoWebhook::DocumentoAutorizado) {
 `WebhookSignature::verify($secretos, $cabecera, $cuerpo)` devuelve `false` (nunca lanza) ante una
 cabecera malformada, vencida o con firma distinta.
 
+### Standard Webhooks y cualquiera de las dos firmas
+
+Cada entrega trae tambien las cabeceras de [Standard Webhooks](https://www.standardwebhooks.com)
+(`webhook-id`, `webhook-timestamp` y `webhook-signature`), firmadas con el mismo secreto decodificado de
+Base64. Basta con verificar una de las dos. `construirEventoDesdeCabeceras` recibe las cabeceras de la
+peticion, verifica `Ecuafact-Signature` si viene y, si no viene o no es valida, Standard Webhooks:
+
+```php
+try {
+    // getallheaders(), $_SERVER o $request->getHeaders() de PSR-7; los nombres no distinguen mayusculas.
+    $evento = WebhookSignature::construirEventoDesdeCabeceras([$secretoActual, $secretoAnterior],
+        getallheaders(), $cuerpo);
+} catch (EcuafactWebhookException) {
+    http_response_code(400);
+    return;
+}
+```
+
+`WebhookSignature::verificarCabeceras($secretos, $cabeceras, $cuerpo)` hace lo mismo y devuelve `bool`, y
+`WebhookSignature::verificarStandardWebhooks($secretos, $webhookId, $webhookTimestamp, $webhookSignature, $cuerpo)`
+verifica solo el estandar. Aceptan el secreto con o sin el prefijo `whsec_`; un secreto que no es Base64 da
+`false`. La tolerancia por defecto tambien es de 300 segundos.
+
+## Cambios en v1.0.0-beta5
+
+- Verificacion de Standard Webhooks: `WebhookSignature::verificarStandardWebhooks` (secreto con o sin `whsec_`,
+  lista de secretos para la rotacion, cualquiera de las firmas `v1,` de la lista) y
+  `WebhookSignature::firmarStandardWebhooks` para tus pruebas.
+- `WebhookSignature::verificarCabeceras`, `WebhookSignature::construirEventoDesdeCabeceras` y
+  `WebhookEvent::construirDesdeCabeceras`: aceptan cualquiera de las dos firmas a partir de las cabeceras de la
+  peticion. Las API existentes no cambian.
+
 ## Cambios en v1.0.0-beta4
 
 - `validar` y `validarEn` (y `validar` en la vista `para()`): validan un comprobante sin emitirlo

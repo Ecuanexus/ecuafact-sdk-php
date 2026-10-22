@@ -54,6 +54,30 @@ final class WebhookEvent
     }
 
     /**
+     * Verifica cualquiera de las dos firmas (`Ecuafact-Signature` o Standard Webhooks) a partir de las
+     * cabeceras de la peticion y parsea el evento.
+     *
+     * @param string|string[] $secrets Secreto o lista de secretos del destino (rotacion).
+     * @param array<string, string|string[]> $headers Cabeceras de la peticion (nombres sin distinguir mayusculas).
+     * @param string $body Cuerpo crudo tal como llego (bytes).
+     * @throws EcuafactWebhookException Si ninguna firma es valida o vigente, o el cuerpo no es un evento.
+     */
+    public static function construirDesdeCabeceras(
+        #[\SensitiveParameter] string|array $secrets,
+        array $headers,
+        string $body,
+        int $toleranceSeconds = WebhookSignature::DEFAULT_TOLERANCE_SECONDS,
+        ?int $now = null
+    ): self {
+        if (!WebhookSignature::verificarCabeceras($secrets, $headers, $body, $now, $toleranceSeconds)) {
+            throw new EcuafactWebhookException(
+                'Firma del webhook invalida o vencida (cabeceras Ecuafact-Signature y Standard Webhooks).'
+            );
+        }
+        return self::desdeJson($body);
+    }
+
+    /**
      * Parsea el cuerpo sin verificar la firma. Usalo solo despues de verificar.
      *
      * @throws EcuafactWebhookException Si el cuerpo no es un objeto JSON.
