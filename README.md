@@ -7,8 +7,10 @@ logo del perfil y firma de webhooks. Compatible con PHP 8.2+.
 ## Instalacion
 
 ```bash
-composer require ecuafact/sdk
+composer require "ecuafact/sdk:^1.0@beta"
 ```
+
+El SDK esta en version preliminar: sin `@beta`, Composer busca una version estable y no la encuentra.
 
 ## Requisitos
 
