@@ -8,7 +8,7 @@ use Ecuafact\Sdk\Contracts\Destinatario;
 use Ecuafact\Sdk\Contracts\Detalle;
 
 /**
- * Guia de remision (codDoc 06). Crealo con `ComprobanteBuilder::guiaRemision()`. No lleva importes:
+ * Guia de remision (tipoDocumento 06). Crealo con `ComprobanteBuilder::guiaRemision()`. No lleva importes:
  * `calcularTotales()` no cambia nada. Lleva exactamente un destinatario.
  */
 final class GuiaRemisionBuilder extends AbstractComprobanteBuilder
@@ -88,7 +88,7 @@ final class GuiaRemisionBuilder extends AbstractComprobanteBuilder
         return $this;
     }
 
-    protected function codDoc(): string
+    protected function tipoDocumento(): string
     {
         return '06';
     }

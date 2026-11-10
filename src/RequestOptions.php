@@ -15,7 +15,7 @@ namespace Ecuafact\Sdk;
  *   `totalTimeoutSeconds` del cliente en esta llamada.
  * - `correlationId`: se envia en la cabecera `X-Correlation-Id`. De 1 a 64 caracteres
  *   `A-Z a-z 0-9 . _ -`. El API lo devuelve y el SDK lo expone en `EmisionResultado::$correlationId`
- *   y en las excepciones (`idSeguimiento` o `correlationId`).
+ *   y en `correlationId` de las excepciones.
  * - `reintentos`: `false` desactiva los reintentos solo en esta llamada.
  * - `additionalInfo`: valor de la cabecera `X-Additional-Info` solo en esta llamada. Reemplaza al
  *   `additionalInfo` del cliente. Misma validacion que en {@see EcuafactClientOptions}.

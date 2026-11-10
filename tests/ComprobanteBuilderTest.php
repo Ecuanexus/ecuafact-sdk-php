@@ -63,7 +63,7 @@ final class ComprobanteBuilderTest extends TestCase
 {
   "origenReferencia": "MiERP",
   "referenciaExterna": "FACTURA-2026-0001",
-  "infoTributaria": { "ruc": "0123456789001", "codDoc": "01", "estab": "002", "ptoEmi": "001" },
+  "infoTributaria": { "ruc": "0123456789001", "tipoDocumento": "01", "estab": "002", "ptoEmi": "001" },
   "info": {
     "fechaEmision": "07/10/2026",
     "tipoIdentificacionComprador": "05",
@@ -118,7 +118,7 @@ JSON, $factura->construir());
 {
   "origenReferencia": "MiERP",
   "referenciaExterna": "FACTURA-2026-0002",
-  "infoTributaria": { "ruc": "0123456789001", "codDoc": "01", "estab": "002", "ptoEmi": "001" },
+  "infoTributaria": { "ruc": "0123456789001", "tipoDocumento": "01", "estab": "002", "ptoEmi": "001" },
   "info": {
     "fechaEmision": "07/10/2026",
     "tipoIdentificacionComprador": "05",
@@ -158,7 +158,7 @@ JSON, $factura->construir());
 {
   "origenReferencia": "MiERP",
   "referenciaExterna": "FACTURA-2026-0003",
-  "infoTributaria": { "ruc": "0123456789001", "codDoc": "01", "estab": "002", "ptoEmi": "001" },
+  "infoTributaria": { "ruc": "0123456789001", "tipoDocumento": "01", "estab": "002", "ptoEmi": "001" },
   "info": {
     "fechaEmision": "07/10/2026",
     "tipoIdentificacionComprador": "05",
@@ -198,7 +198,7 @@ JSON, $factura->construir());
 {
   "origenReferencia": "MiERP",
   "referenciaExterna": "FACTURA-2026-0004",
-  "infoTributaria": { "ruc": "0123456789001", "codDoc": "01", "estab": "002", "ptoEmi": "001" },
+  "infoTributaria": { "ruc": "0123456789001", "tipoDocumento": "01", "estab": "002", "ptoEmi": "001" },
   "info": {
     "fechaEmision": "07/10/2026",
     "tipoIdentificacionComprador": "05",
@@ -235,7 +235,7 @@ JSON, $factura->construir());
 {
   "origenReferencia": "MiERP",
   "referenciaExterna": "FACTURA-2026-0005",
-  "infoTributaria": { "ruc": "0123456789001", "codDoc": "01", "estab": "002", "ptoEmi": "001" },
+  "infoTributaria": { "ruc": "0123456789001", "tipoDocumento": "01", "estab": "002", "ptoEmi": "001" },
   "info": {
     "fechaEmision": "07/10/2026",
     "tipoIdentificacionComprador": "05",
@@ -276,7 +276,7 @@ JSON, $factura->construir());
 {
   "origenReferencia": "MiERP",
   "referenciaExterna": "FACTURA-2026-0006",
-  "infoTributaria": { "ruc": "0123456789001", "codDoc": "01", "estab": "002", "ptoEmi": "001" },
+  "infoTributaria": { "ruc": "0123456789001", "tipoDocumento": "01", "estab": "002", "ptoEmi": "001" },
   "info": {
     "fechaEmision": "07/10/2026",
     "tipoIdentificacionComprador": "05",
@@ -328,7 +328,7 @@ JSON, $factura->construir());
 {
   "origenReferencia": "MiERP",
   "referenciaExterna": "LIQUIDACION-2026-0001",
-  "infoTributaria": { "ruc": "0123456789001", "codDoc": "03", "estab": "002", "ptoEmi": "001" },
+  "infoTributaria": { "ruc": "0123456789001", "tipoDocumento": "03", "estab": "002", "ptoEmi": "001" },
   "info": {
     "fechaEmision": "07/10/2026",
     "tipoIdentificacionProveedor": "05",
@@ -375,7 +375,7 @@ JSON, $liquidacion->construir());
 {
   "origenReferencia": "MiERP",
   "referenciaExterna": "NOTACREDITO-2026-0001",
-  "infoTributaria": { "ruc": "0123456789001", "codDoc": "04", "estab": "002", "ptoEmi": "001" },
+  "infoTributaria": { "ruc": "0123456789001", "tipoDocumento": "04", "estab": "002", "ptoEmi": "001" },
   "info": {
     "fechaEmision": "07/10/2026",
     "tipoIdentificacionComprador": "05",
@@ -424,7 +424,7 @@ JSON, $nota->construir());
 {
   "origenReferencia": "MiERP",
   "referenciaExterna": "ND-2026-0001",
-  "infoTributaria": { "ruc": "0123456789001", "codDoc": "05", "estab": "001", "ptoEmi": "001", "secuencial": "000000000" },
+  "infoTributaria": { "ruc": "0123456789001", "tipoDocumento": "05", "estab": "001", "ptoEmi": "001", "secuencial": "000000000" },
   "info": {
     "fechaEmision": "07/10/2026",
     "tipoIdentificacionComprador": "05",
@@ -469,7 +469,7 @@ JSON, $nota->construir());
 {
   "origenReferencia": "MiERP",
   "referenciaExterna": "GR-2026-0001",
-  "infoTributaria": { "ruc": "0123456789001", "codDoc": "06", "estab": "001", "ptoEmi": "001", "secuencial": "000000000" },
+  "infoTributaria": { "ruc": "0123456789001", "tipoDocumento": "06", "estab": "001", "ptoEmi": "001", "secuencial": "000000000" },
   "info": {
     "dirPartida": "BODEGA PRINCIPAL DE PRUEBAS",
     "razonSocialTransportista": "TRANSPORTISTA DE PRUEBAS",
@@ -522,7 +522,7 @@ JSON, $guia->construir());
 {
   "origenReferencia": "MiERP",
   "referenciaExterna": "RET-2026-0001",
-  "infoTributaria": { "ruc": "0123456789001", "codDoc": "07", "estab": "001", "ptoEmi": "001", "secuencial": "000000000" },
+  "infoTributaria": { "ruc": "0123456789001", "tipoDocumento": "07", "estab": "001", "ptoEmi": "001", "secuencial": "000000000" },
   "info": {
     "fechaEmision": "05/10/2026",
     "tipoIdentificacionSujetoRetenido": "05",
@@ -711,7 +711,8 @@ JSON, $retencion->construir());
     public function testPrecisionInvalidaLanzaConfiguracion(): void
     {
         $this->expectException(EcuafactConfigurationException::class);
-        new Precision(escalaImportes: -1);
+        $creado = new Precision(escalaImportes: -1);
+        self::fail('Se esperaba EcuafactConfigurationException.' . ' Se creo ' . $creado::class . '.');
     }
 
     // ------------------------------------------------------------------ validar
@@ -744,11 +745,11 @@ JSON, $retencion->construir());
             ->linea('A', 'B', 1, '10.00', 0, Tarifa::iva15())
             ->configurar(static function (ComprobanteRequest $c): void {
                 $c->info->moneda = null;
-                $c->infoTributaria->codDoc = '04';
+                $c->infoTributaria->tipoDocumento = '04';
             });
         $campos = array_map(static fn (Inconsistencia $i): string => $i->campo, $builder->validar());
         foreach ([
-            'origenReferencia', 'referenciaExterna', 'infoTributaria.ruc', 'infoTributaria.codDoc',
+            'origenReferencia', 'referenciaExterna', 'infoTributaria.ruc', 'infoTributaria.tipoDocumento',
             'infoTributaria.estab', 'infoTributaria.ptoEmi', 'info.fechaEmision', 'info.moneda', 'info.propina',
             'info.tipoIdentificacionComprador', 'info.totalConImpuestos', 'info.importeTotal', 'info.pagos',
             'detalles[0].precioTotalSinImpuesto',

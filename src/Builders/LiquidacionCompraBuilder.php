@@ -7,7 +7,7 @@ namespace Ecuafact\Sdk\Builders;
 use Ecuafact\Sdk\Builders\Concerns\ConPagos;
 use Ecuafact\Sdk\Contracts\Detalle;
 
-/** Liquidacion de compra (codDoc 03). Crealo con `ComprobanteBuilder::liquidacionCompra()`. Sin propina. */
+/** Liquidacion de compra (tipoDocumento 03). Crealo con `ComprobanteBuilder::liquidacionCompra()`. Sin propina. */
 final class LiquidacionCompraBuilder extends AbstractLineasBuilder
 {
     use ConPagos;
@@ -47,7 +47,7 @@ final class LiquidacionCompraBuilder extends AbstractLineasBuilder
         return $this;
     }
 
-    protected function codDoc(): string
+    protected function tipoDocumento(): string
     {
         return '03';
     }

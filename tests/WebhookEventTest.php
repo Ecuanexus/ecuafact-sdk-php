@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ecuafact\Sdk\Tests;
 
+use Ecuafact\Sdk\Contracts\EstadoOperacion;
 use Ecuafact\Sdk\Contracts\TipoEventoWebhook;
 use Ecuafact\Sdk\EcuafactSdkException;
 use Ecuafact\Sdk\EcuafactWebhookException;
@@ -97,9 +98,10 @@ final class WebhookEventTest extends TestCase
     public function testConstruirEventoTipado(): void
     {
         $casos = [
-            ['document.authorized', TipoEventoWebhook::DocumentoAutorizado, ['estado' => 'authorized', 'claveAcceso' => 'CLAVE']],
-            ['document.rejected', TipoEventoWebhook::DocumentoRechazado, ['estado' => 'rejected', 'claveAcceso' => 'CLAVE']],
-            ['document.failed', TipoEventoWebhook::DocumentoFallido, ['estado' => 'failed', 'motivo' => 'resultado_desconocido', 'codigoError' => 'error_servicio']],
+            ['document.authorized', TipoEventoWebhook::DocumentoAutorizado, ['estado' => 'autorizado', 'codEstado' => 2001, 'errores' => [], 'claveAcceso' => 'CLAVE', 'tipoDocumento' => '01', 'fhAutorizacion' => '2026-11-09T10:15:03-05:00']],
+            ['document.rejected', TipoEventoWebhook::DocumentoRechazado, ['estado' => 'rechazado', 'claveAcceso' => 'CLAVE', 'tipoDocumento' => '04', 'codEstado' => 3001, 'msgError' => 'El SRI rechazo el comprobante.', 'errores' => ['CLAVE ACCESO REGISTRADA']]],
+            ['document.failed', TipoEventoWebhook::DocumentoFallido, ['estado' => 'rechazo_configuracion', 'codEstado' => 4002, 'msgError' => 'La firma electronica no es valida.', 'errores' => []]],
+            ['document.failed', TipoEventoWebhook::DocumentoFallido, ['estado' => 'error', 'codEstado' => 5007, 'msgError' => 'No se pudo confirmar el resultado.']],
             ['operation.requires_attention', TipoEventoWebhook::OperacionRequiereAtencion, ['probe' => 'true']],
             ['document.archived', TipoEventoWebhook::Desconocido, []],
         ];
@@ -114,8 +116,12 @@ final class WebhookEventTest extends TestCase
             self::assertSame('2026-10-07T15:04:05.123456+00:00', $evento->occurredAtUtc?->format('Y-m-d\TH:i:s.uP'));
             self::assertSame($extra['estado'] ?? null, $evento->estado);
             self::assertSame($extra['claveAcceso'] ?? null, $evento->claveAcceso);
-            self::assertSame($extra['motivo'] ?? null, $evento->motivo);
-            self::assertSame($extra['codigoError'] ?? null, $evento->codigoError);
+            self::assertSame(EstadoOperacion::desdeValor($extra['estado'] ?? null), $evento->estadoOperacion());
+            self::assertSame($extra['codEstado'] ?? null, $evento->codEstado);
+            self::assertSame($extra['errores'] ?? [], $evento->errores);
+            self::assertSame($extra['fhAutorizacion'] ?? null, $evento->fhAutorizacion);
+            self::assertSame($extra['msgError'] ?? null, $evento->msgError);
+            self::assertSame($extra['tipoDocumento'] ?? null, $evento->tipoDocumento);
             self::assertSame(isset($extra['probe']), $evento->probe);
         }
     }
@@ -126,7 +132,7 @@ final class WebhookEventTest extends TestCase
         $header = WebhookSignature::sign(self::SECRET, self::STAMP, $body);
         $evento = WebhookEvent::construir(self::SECRET, $header, $body, 300, self::STAMP);
         self::assertSame(TipoEventoWebhook::DocumentoAutorizado, $evento->eventType);
-        self::assertSame('document.authorized', $evento->datos['eventType']);
+        self::assertSame('document.authorized', $evento->cuerpo['eventType']);
     }
 
     public function testFirmaInvalidaLanzaWebhookException(): void

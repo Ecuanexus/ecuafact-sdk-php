@@ -1,8 +1,10 @@
 # ecuafact/sdk (PHP)
 
 Cliente oficial en PHP del API publico de facturacion electronica Ecuafact (contrato v1). Cubre
-autenticacion, idempotencia, reintentos configurables, espera del resultado, recorrido de paginas,
-logo del perfil y firma de webhooks. Compatible con PHP 8.2+.
+autenticacion, idempotencia, reintentos configurables, espera del resultado, logo del perfil y firma de
+webhooks. Compatible con PHP 8.2+.
+
+Versión preliminar actual: `v1.0.0-beta6`.
 
 ## Instalacion
 
@@ -33,37 +35,46 @@ use Ecuafact\Sdk\EcuafactClientOptions;
 
 // Sin argumentos, el SDK lee ECUAFACT_API_KEY y ECUAFACT_BASE_URL del entorno.
 $client = new EcuafactClient(new EcuafactClientOptions(
-    identificacion: '0123456789', // solo integraciones de un contribuyente
+    identificacion: '0123456789001', // identificacion de GET /v1/contexto (RUC de 13 digitos); opcional
 ));
 
 $comprobante = new ComprobanteRequest();
 $comprobante->origenReferencia = 'MiERP';
 $comprobante->referenciaExterna = 'FACTURA-2026-0001';
 $comprobante->infoTributaria = new InfoTributaria();
-$comprobante->infoTributaria->ruc = '0123456789001'; // identificacionCompleta de GET /v1/contexto
-$comprobante->infoTributaria->codDoc = '01';
+$comprobante->infoTributaria->ruc = '0123456789001'; // identificacion de GET /v1/contexto
+$comprobante->infoTributaria->tipoDocumento = '01';
 $comprobante->infoTributaria->estab = '002';
 $comprobante->infoTributaria->ptoEmi = '001';
 // $comprobante->info = ...; $comprobante->detalles = [...];
 
-$resultado = $client->emitir($comprobante);          // 202: admitido, no autorizado todavia
+$resultado = $client->emitir($comprobante);          // 202 con estado "recibido": aun no autorizado
 $operacion = $client->esperarResultado($resultado->admission->idOperacion);
-if ($operacion->esFinal() && $operacion->esAutorizado()) {
+if ($operacion->esAutorizado()) {
     echo $operacion->claveAcceso . PHP_EOL;
+} elseif ($operacion->esFinal()) {
+    // codEstado numerico (por ejemplo 3001), msgError general y errores con el detalle
+    echo $operacion->estado . ' ' . $operacion->codEstado . ': ' . $operacion->msgError . PHP_EOL;
+    print_r($operacion->errores);
 }
 ```
+
+`emitir` y `emitirEn` usan `infoTributaria.tipoDocumento` para elegir la ruta de emision y no envian ese
+campo en el cuerpo. El mapa es `01` facturas, `03` liquidaciones-compra, `04` notas-credito, `05`
+notas-debito, `06` guias-remision y `07` retenciones. Si falta o no es uno de los seis, lanzan
+`EcuafactSdkException` antes de llamar al API.
 
 ### Multi-RUC
 
 ```php
-$ruc = $client->para('0123456789');
-$pagina = $ruc->listarEmitidos();
+$ruc = $client->para('0123456789001');
+$operacion = $ruc->esperarResultado($idOperacion);
 $ride = $ruc->descargarRide($claveAcceso);
 $perfil = $ruc->actualizarLogo(file_get_contents('logo.png'), 'image/png', 'logo.png');
 ```
 
-La vista expone `emitir`, `validar`, `listarEmitidos`, `iterarEmitidos`, `descargarRide`, `descargarXml`,
-`enviarCorreo`, `getPerfil`, `actualizarPerfil`, `actualizarLogo`, `esperarResultado` y `getConsumo`.
+La vista expone `emitir`, `validar`, `descargarRide`, `descargarXml`, `getPerfil`, `actualizarPerfil`,
+`actualizarLogo`, `esperarResultado` y `getConsumo`.
 
 ## Variables de entorno
 
@@ -82,8 +93,7 @@ API Key con espacios al inicio o al final o con caracteres de control lanza
 Importes, cantidades, precios y tarifas de la solicitud aceptan `float` o `string` decimal. El string
 (`'11.50'`) viaja como numero JSON literal (`11.50`), sin pasar por float. Un float se envia con 15
 digitos significativos: `0.1 + 0.2` viaja como `0.3`. Un string que no sea decimal (`'1e3'`) lanza
-`EcuafactSdkException` antes de enviar. En las respuestas, `Comprobante::$total` y
-`CatalogoItem::$tarifa` se leen como `float` (precision de double).
+`EcuafactSdkException` antes de enviar.
 
 `Hydrator::hydrate()` convierte cada valor al tipo declarado y, si no puede, lanza
 `EcuafactSdkException` (nunca un `TypeError`).
@@ -94,24 +104,26 @@ digitos significativos: `0.1 + 0.2` viaja como `0.3`. Un string que no sea decim
 devuelve en `resultado->idempotencyKey` (y en el error, como `->idempotencyKey`). Formato: solo letras,
 digitos y `- _ . : /`, maximo 128 caracteres; otra clave lanza `EcuafactSdkException` sin llamar al API.
 Al reintentar, **reutiliza la clave devuelta**. La correlacion queda en `resultado->correlationId`
-(o `->idSeguimiento` en el error).
+(o `->correlationId` en el error).
 
 `getOperacion`, `consultarOperacion` y `esperarResultado` exigen un `idOperacion` UUID.
 
 ## Validar sin emitir
 
 `validar($comprobante)` y `validarEn($identificacion, $comprobante)` aplican las reglas de la emision sin
-emitir, sin consumir cupo y sin `Idempotency-Key`. Devuelven `ValidacionResultado` (`valido`, `codigo`,
-`mensaje`, `errores`, `correlationId`).
+emitir, sin consumir cupo y sin `Idempotency-Key`. Usan la ruta de `infoTributaria.tipoDocumento` y le agregan
+`/validar` (por ejemplo `.../notas-credito/validar`), y no envian `tipoDocumento` en el cuerpo. Devuelven
+`ValidacionResultado` (`valido`, `codEstado`, `msgError`, `errores`, `correlationId`). Con un comprobante valido,
+`codEstado` y `msgError` son `null` y `errores` esta vacio.
 
 ```php
-$validacion = $client->validarEn('0123456789', $comprobante);
-if (!$validacion->valido) {          // 422 con codigo 302: no lanza
+$validacion = $client->validarEn('0123456789001', $comprobante);
+if (!$validacion->valido) {          // 422 con codEstado 3002: no lanza
     print_r($validacion->errores);
 }
 ```
 
-Cualquier otro error lanza la excepcion habitual (por ejemplo `EcuafactAuthException` con 403/`103`).
+Cualquier otro error lanza la excepcion habitual (por ejemplo `EcuafactAuthException` con 403 y `codEstado` 3011).
 Como no tiene efectos, se reintenta igual que un GET.
 
 ## Reintentos
@@ -119,9 +131,9 @@ Como no tiene efectos, se reintenta igual que un GET.
 Se reintentan solo solicitudes idempotentes (GET, `validar`/`validarEn`, o POST/PUT con `Idempotency-Key`) ante errores de red
 y los estados de `retryableStatusCodes` (`408, 425, 500, 502, 503, 504`).
 
-- `429` con `codigo` `501` (cupo agotado): **nunca** se reintenta.
-- `429` con `codigo` `104` (limite de solicitudes): solo con `retryRateLimited: true`, respetando
-  `Retry-After` y `maxRetryDelaySeconds`.
+- `429` con `codEstado` 5005 (`limite_solicitudes`): se reintenta por defecto, respetando `Retry-After` con el
+  tope `maxRetryDelaySeconds`. `retryRateLimited: false` lo desactiva.
+- `429` con `codEstado` 4004 (`cupo_agotado`), con otro codigo o sin cuerpo: **nunca** se reintenta.
 
 ## Opciones
 
@@ -136,7 +148,7 @@ y los estados de `retryableStatusCodes` (`408, 425, 500, 502, 503, 504`).
 | `maxAttempts` | `3` | Intentos por solicitud (minimo 1) |
 | `respectRetryAfter` | `true` | Espera al menos lo que indica `Retry-After` |
 | `maxRetryDelaySeconds` | `60.0` | Espera maxima entre reintentos (`0` = sin tope) |
-| `retryRateLimited` | `false` | Reintenta el `429`/`104` |
+| `retryRateLimited` | `true` | Reintenta el `429` con `codEstado` 5005; nunca el 4004 |
 | `retryableStatusCodes` | `[408, 425, 500, 502, 503, 504]` | Estados HTTP reintentables |
 | `retryBaseDelaySeconds` | `0.2` | Espera base entre reintentos |
 | `retryBackoff` | `RetryBackoff::Linear` | `Linear` (base x intento) o `Exponential` (base x 2^(intento-1)); acepta `'linear'`/`'exponential'` |
@@ -162,7 +174,7 @@ declara; `extra` no se envia al API.
 
 ## Opciones por llamada
 
-Todos los metodos que llaman al API (tambien `para()`, `esperarResultado` e `iterarEmitidos`) aceptan
+Todos los metodos que llaman al API (tambien `para()` y `esperarResultado`) aceptan
 como ultimo argumento `?RequestOptions $opciones`. Solo afectan a esa llamada.
 
 ```php
@@ -175,13 +187,13 @@ $opciones = new RequestOptions(
     reintentos: true,         // false: sin reintentos en esta llamada
     additionalInfo: 'erp=MiERP/4.2; caja=3', // cabecera X-Additional-Info; reemplaza a la del cliente
 );
-$resultado = $client->emitirEn('0123456789', $comprobante, 'FACTURA-2026-0001', $opciones);
+$resultado = $client->emitirEn('0123456789001', $comprobante, 'FACTURA-2026-0001', $opciones);
 echo $resultado->correlationId; // la correlacion que devolvio el API
 ```
 
 - Un `correlationId` invalido, un `additionalInfo` invalido o un tiempo `<= 0` lanza
   `EcuafactConfigurationException`.
-- La correlacion queda en `EmisionResultado::$correlationId`, en `EcuafactApiException::$idSeguimiento`
+- La correlacion queda en `EmisionResultado::$correlationId`, en `EcuafactApiException::$correlationId`
   y en `EcuafactConnectionException::$correlationId` / `EcuafactTimeoutException::$correlationId`.
 - `timeout` por llamada se aplica con el transporte cURL (o uno que implemente
   `TimeoutOverrideTransportInterface`); con un transporte PSR-18 lo controla tu cliente HTTP.
@@ -206,7 +218,7 @@ $builder = ComprobanteBuilder::factura('0123456789001', '002', '001')
     ->calcularTotales();    // opcional: rellena solo lo que esta vacio
 
 $inconsistencias = $builder->validar(); // Inconsistencia[] {campo, mensaje, esperado, actual}; no lanza
-$resultado = $client->emitirEn('0123456789', $builder->construir(), 'FACTURA-2026-0001');
+$resultado = $client->emitirEn('0123456789001', $builder->construir(), 'FACTURA-2026-0001');
 ```
 
 - Tipos: `factura`, `liquidacionCompra`, `notaCredito`, `notaDebito`, `guiaRemision`, `retencion`.
@@ -220,27 +232,36 @@ $resultado = $client->emitirEn('0123456789', $builder->construir(), 'FACTURA-202
   `ComprobanteBuilder::validarComprobante($request)`.
 - Calculo exacto: usa `bcmath` si esta instalado y, si no, aritmetica decimal propia sobre strings.
 
-## Recorrer paginas
-
-```php
-use Ecuafact\Sdk\ListadoRequest;
-
-$filtros = (new ListadoRequest())->desde(new DateTimeImmutable('2026-10-01'))->hasta('2026-10-07');
-foreach ($client->iterarEmitidosEn('0123456789', $filtros) as $comprobante) {
-    echo $comprobante->claveAcceso . PHP_EOL;
-}
-```
-
-`desde`/`hasta` son fechas de calendario de Ecuador (`Y-m-d`). Un `DateTimeInterface` se formatea como
-`Y-m-d` en su propia zona horaria. `iterarEmitidos` pide cada pagina solo cuando la necesitas y para con
-`hayMas = false` o en la pagina 10000.
-
 ## Estados tipados
 
-`Operation::estadoOperacion()` (`EstadoOperacion`), `Operation::estadoAutorizacionTipado()`
-(`EstadoAutorizacion`), `Operation::tipoComprobante()` (`TipoComprobante`), `Operation::esFinal()` y
-`Operation::esAutorizado()`. Un valor nuevo del API se lee como `Desconocido` (o `null` en
-`TipoComprobante`); los campos string originales no cambian.
+La operacion y el webhook llevan `estado` con uno de estos valores
+(`EstadoOperacion`):
+
+| estado | Caso | Final |
+|---|---|---|
+| `recibido` (`Recibido`) | El comprobante paso las validaciones y se acepto; aun no hay resultado | No |
+| `autorizado` (`Autorizado`) | Autorizado por el SRI | Si |
+| `rechazado` (`Rechazado`) | Rechazado por el contenido del comprobante | Si |
+| `rechazo_configuracion` (`RechazoConfiguracion`) | Falta o esta mal una configuracion del emisor | Si |
+| `error` (`Error`) | Un fallo impidio definitivamente la autorizacion | Si |
+| `cancelado` (`Cancelado`) | Envio cancelado por la plataforma | Si |
+
+Junto al `estado` llega `codEstado`, un numero de 4 digitos cuyo primer digito es el `estado`: 1001 recibido
+sin clave de acceso, 1002 recibido con `claveAcceso`, 2001 autorizado, 3xxx rechazado (3001 `rechazo_sri`),
+4xxx rechazo de configuracion (4002 `firma_no_valida`, 4004 `cupo_agotado`), 5xxx error y 6001 cancelado. En
+los estados finales distintos de `autorizado`, `msgError` describe el codigo y `errores` trae el detalle (por
+ejemplo el mensaje del SRI); sin error, `msgError` es `null` y `errores` esta vacio. `Contracts\CodEstado` trae
+una constante por codigo, `CodEstado::estado($codigo)` devuelve el `EstadoOperacion` de un codigo (tambien de
+uno nuevo) y `CodEstado::nombre($codigo)` su nombre en el catalogo.
+
+La emision (`Admission`) y la operacion (`Operation`) tienen los mismos campos: `estado`, `codEstado`,
+`msgError`, `errores`, `idOperacion`, `urlEstado` (URL absoluta de la operacion), `ambiente`, `tipoDocumento`,
+`numeroDocumento`, `referenciaExterna`, `claveAcceso`, `fhRecibido` y `fhAutorizacion`.
+
+`Admission` y `Operation` ofrecen `estadoOperacion()`, `tipoComprobante()` (`TipoComprobante`, a partir de
+`tipoDocumento`), `esFinal()` y `esAutorizado()`; `EstadoOperacion` tambien tiene `esFinal()` y
+`esAutorizado()`. Un valor nuevo del API se lee como `Desconocido` (no final) o `null` en `TipoComprobante`;
+los campos string originales no cambian.
 
 ## Errores
 
@@ -250,17 +271,35 @@ foreach ($client->iterarEmitidosEn('0123456789', $filtros) as $comprobante) {
 | `EcuafactValidationException` | 400/422 | Corrige los datos segun `errores` |
 | `EcuafactNotFoundException` | 404 | Revisa la identificacion, la clave o el id |
 | `EcuafactConflictException` | 409 | Misma `Idempotency-Key` con otro contenido, o comprobante duplicado |
-| `EcuafactRateLimitException` | 429/`104` | Espera `retryAfter` segundos y repite |
-| `EcuafactQuotaException` | 429/`501` | Compra cupo; no repitas |
+| `EcuafactRateLimitException` | 429 con `codEstado` 5005 | Espera `retryAfter` segundos y repite |
+| `EcuafactQuotaException` | 429 con `codEstado` 4004 | Compra cupo; no repitas |
 | `EcuafactServerException` | 5xx | Repite con la misma `Idempotency-Key` si `esReintentable` |
 | `EcuafactConnectionException` | Sin respuesta HTTP | Repite con la misma `Idempotency-Key` |
 | `EcuafactTimeoutException` | Tiempo agotado | Consulta la operacion o repite con la misma clave |
 | `EcuafactConfigurationException` | Opcion invalida | Corrige la configuracion |
 | `EcuafactWebhookException` | Firma de webhook invalida | Responde 400 y no proceses el evento |
 
-Las de API heredan de `EcuafactApiException` (`codigo`, `mensaje`, `errores`, `estadoHttp`,
-`idSeguimiento`, `idempotencyKey`, `retryAfter`, `esReintentable`); todas heredan de
-`EcuafactSdkException`.
+Todo error del API tiene la misma forma: `{ "estado": "rechazado", "codEstado": 3002, "msgError": "...",
+"errores": [...] }`. Las de API heredan de `EcuafactApiException` (`codEstado` como int, `estado`, `msgError`,
+`errores`, `status` con el codigo HTTP, `correlationId`, `idempotencyKey`, `retryAfter`, `esReintentable`;
+`estadoHttp` es el mismo valor que `status`); todas heredan de `EcuafactSdkException`. Si el cuerpo no era
+JSON, `codEstado` vale 0. Compara `codEstado` con las constantes de `Contracts\CodEstado`:
+
+```php
+use Ecuafact\Sdk\Contracts\CodEstado;
+use Ecuafact\Sdk\EcuafactApiException;
+
+try {
+    $client->emitir($comprobante);
+} catch (EcuafactApiException $e) {
+    if ($e->codEstado === CodEstado::COMPROBANTE_INVALIDO) {
+        print_r($e->errores);                // detalle por campo
+    }
+    error_log($e->status . ' ' . $e->codEstado . ' ' . $e->msgError . ' ' . $e->correlationId);
+}
+```
+
+`Contracts\EstadosPublicos` trae los valores de texto de `estado`.
 
 ## Webhooks
 
@@ -278,10 +317,27 @@ try {
     http_response_code(400);
     return;
 }
-if ($evento->eventType === TipoEventoWebhook::DocumentoAutorizado) {
-    // $evento->idOperacion, $evento->claveAcceso
+switch ($evento->eventType) {
+    case TipoEventoWebhook::DocumentoAutorizado: // estado autorizado, codEstado 2001
+        // $evento->idOperacion, $evento->claveAcceso, $evento->tipoDocumento, $evento->fhAutorizacion
+        break;
+    case TipoEventoWebhook::DocumentoRechazado: // rechazado con codEstado 3001
+        // $evento->errores trae el mensaje del SRI
+        break;
+    case TipoEventoWebhook::DocumentoFallido: // rechazado (3002), rechazo_configuracion (4xxx) o error (5xxx)
+        // $evento->estado, $evento->codEstado, $evento->msgError, $evento->errores; siempre final
+        break;
+    case TipoEventoWebhook::OperacionRequiereAtencion: // aviso no final (sigue recibido) o evento de prueba
+        break;
 }
 ```
+
+`document.authorized` llega con `estado` `autorizado`; `document.rejected`, solo con `rechazado` y `codEstado`
+3001 (`rechazo_sri`); `document.failed`, con `rechazado` y 3002 (`comprobante_invalido`), con
+`rechazo_configuracion` o con `error`, y siempre es final. El cuerpo trae `codEstado`, `errores`, `msgError`
+(solo si hay error) y `fhAutorizacion` (si existe). `operation.requires_attention` es un aviso no final: el documento sigue `recibido`
+y el resultado llega despues con otro evento. Un documento `cancelado` no genera evento. `$evento->cuerpo` trae
+el cuerpo completo decodificado.
 
 `WebhookSignature::verify($secretos, $cabecera, $cuerpo)` devuelve `false` (nunca lanza) ante una
 cabecera malformada, vencida o con firma distinta.
@@ -308,30 +364,6 @@ try {
 `WebhookSignature::verificarStandardWebhooks($secretos, $webhookId, $webhookTimestamp, $webhookSignature, $cuerpo)`
 verifica solo el estandar. Aceptan el secreto con o sin el prefijo `whsec_`; un secreto que no es Base64 da
 `false`. La tolerancia por defecto tambien es de 300 segundos.
-
-## Cambios en v1.0.0-beta5
-
-- Verificacion de Standard Webhooks: `WebhookSignature::verificarStandardWebhooks` (secreto con o sin `whsec_`,
-  lista de secretos para la rotacion, cualquiera de las firmas `v1,` de la lista) y
-  `WebhookSignature::firmarStandardWebhooks` para tus pruebas.
-- `WebhookSignature::verificarCabeceras`, `WebhookSignature::construirEventoDesdeCabeceras` y
-  `WebhookEvent::construirDesdeCabeceras`: aceptan cualquiera de las dos firmas a partir de las cabeceras de la
-  peticion. Las API existentes no cambian.
-
-## Cambios en v1.0.0-beta4
-
-- `validar` y `validarEn` (y `validar` en la vista `para()`): validan un comprobante sin emitirlo
-  (`POST /v1/contribuyentes/{identificacion}/comprobantes/validar`) y devuelven `ValidacionResultado`. Un
-  comprobante invalido (422/`302`) devuelve `valido = false` sin lanzar; el resto de errores lanza como siempre.
-  No envia `Idempotency-Key` y se reintenta como un GET.
-
-## Cambios en v1.0.0-beta3
-
-- Opcion `additionalInfo` para enviar la cabecera `X-Additional-Info` (texto del integrador que el API registra en
-  sus logs para soporte; ASCII imprimible, sin espacios al inicio o al final, maximo 256 caracteres), en el
-  cliente y por llamada. No aparece en errores ni en la representacion de las opciones.
-- **Cambio de comportamiento:** el tiempo maximo por intento por defecto (`timeout`) baja de 100 a 30 segundos.
-  Si tus llamadas tardan mas, fija el valor de forma explicita.
 
 ## Documentacion
 

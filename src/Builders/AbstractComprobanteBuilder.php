@@ -27,7 +27,7 @@ abstract class AbstractComprobanteBuilder
     private bool $calcular = false;
 
     protected function __construct(
-        string $codDoc,
+        string $tipoDocumento,
         string $ruc,
         string $estab,
         string $ptoEmi,
@@ -36,7 +36,7 @@ abstract class AbstractComprobanteBuilder
         $this->comprobante = new ComprobanteRequest();
         $this->comprobante->infoTributaria = new InfoTributaria();
         $this->comprobante->infoTributaria->ruc = $ruc;
-        $this->comprobante->infoTributaria->codDoc = $codDoc;
+        $this->comprobante->infoTributaria->tipoDocumento = $tipoDocumento;
         $this->comprobante->infoTributaria->estab = $estab;
         $this->comprobante->infoTributaria->ptoEmi = $ptoEmi;
         $this->comprobante->info = new InfoDocumento();
@@ -137,7 +137,7 @@ abstract class AbstractComprobanteBuilder
 
     /**
      * Inconsistencias de lo que devolveria `construir()`: totales que no cuadran, campos obligatorios
-     * del tipo, `codDoc` y formatos. Lista vacia si no encontro ninguna. No lanza.
+     * del tipo, `tipoDocumento` y formatos. Lista vacia si no encontro ninguna. No lanza.
      *
      * @return Inconsistencia[]
      */
@@ -148,10 +148,10 @@ abstract class AbstractComprobanteBuilder
         } catch (EcuafactSdkException $e) {
             return [new Inconsistencia('comprobante', $e->getMessage())];
         }
-        return (new CalculadoraComprobante($this->precision))->validar($comprobante, $this->codDoc());
+        return (new CalculadoraComprobante($this->precision))->validar($comprobante, $this->tipoDocumento());
     }
 
-    abstract protected function codDoc(): string;
+    abstract protected function tipoDocumento(): string;
 
     protected static function fechaTexto(string|\DateTimeInterface $fecha): string
     {

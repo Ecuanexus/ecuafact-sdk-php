@@ -44,7 +44,7 @@ final class OpcionesPorLlamadaTest extends TestCase
     {
         $comprobante = new ComprobanteRequest();
         $comprobante->infoTributaria = new InfoTributaria();
-        $comprobante->infoTributaria->codDoc = '01';
+        $comprobante->infoTributaria->tipoDocumento = '01';
         return $comprobante;
     }
 
@@ -74,19 +74,19 @@ final class OpcionesPorLlamadaTest extends TestCase
 
     public function testSinOpcionesNoSeEnviaCorrelationId(): void
     {
-        $transport = new FakeTransport(new TransportResponse(200, '{"datos":{"idCliente":"c"}}'));
+        $transport = new FakeTransport(new TransportResponse(200, '{"idCliente":"c"}'));
         $this->cliente($transport)->getContexto();
         self::assertNull($transport->header(0, 'X-Correlation-Id'));
     }
 
     public function testCorrelationIdEnLaExcepcionDelApi(): void
     {
-        $transport = new FakeTransport(new TransportResponse(404, '{"codigo":"404","mensaje":"No existe."}'));
+        $transport = new FakeTransport(new TransportResponse(404, '{"estado":"rechazado","codEstado":3013,"msgError":"No existe."}'));
         try {
             $this->cliente($transport)->getOperacion(self::UUID, new RequestOptions(correlationId: 'corr-404'));
             self::fail('Se esperaba EcuafactNotFoundException.');
         } catch (EcuafactNotFoundException $error) {
-            self::assertSame('corr-404', $error->idSeguimiento);
+            self::assertSame('corr-404', $error->correlationId);
             self::assertSame('corr-404', $transport->header(0, 'X-Correlation-Id'));
         }
     }
@@ -134,7 +134,8 @@ final class OpcionesPorLlamadaTest extends TestCase
     public function testCorrelationIdInvalidoLanzaConfiguracion(string $valor): void
     {
         $this->expectException(EcuafactConfigurationException::class);
-        new RequestOptions(correlationId: $valor);
+        $creado = new RequestOptions(correlationId: $valor);
+        self::fail('Se esperaba EcuafactConfigurationException.' . ' Se creo ' . $creado::class . '.');
     }
 
     public function testCorrelationIdDe64CaracteresEsValido(): void
@@ -146,8 +147,8 @@ final class OpcionesPorLlamadaTest extends TestCase
     {
         foreach ([[0.0, null], [-1.0, null], [INF, null], [null, 0.0], [null, NAN]] as [$timeout, $total]) {
             try {
-                new RequestOptions(timeout: $timeout, totalTimeout: $total);
-                self::fail('Se esperaba EcuafactConfigurationException.');
+                $creado = new RequestOptions(timeout: $timeout, totalTimeout: $total);
+                self::fail('Se esperaba EcuafactConfigurationException.' . ' Se creo ' . $creado::class . '.');
             } catch (EcuafactConfigurationException) {
                 self::assertTrue(true);
             }
@@ -157,9 +158,9 @@ final class OpcionesPorLlamadaTest extends TestCase
     public function testReintentosFalseDesactivaLosReintentosSoloEnEsaLlamada(): void
     {
         $transport = new FakeTransport(
-            new TransportResponse(503, '{"codigo":"002","mensaje":"No disponible."}'),
-            new TransportResponse(503, '{"codigo":"002","mensaje":"No disponible."}'),
-            new TransportResponse(200, '{"datos":{"idCliente":"c"}}')
+            new TransportResponse(503, '{"estado":"error","codEstado":5002,"msgError":"No disponible."}'),
+            new TransportResponse(503, '{"estado":"error","codEstado":5002,"msgError":"No disponible."}'),
+            new TransportResponse(200, '{"idCliente":"c"}')
         );
         $cliente = $this->cliente($transport);
         try {
@@ -202,8 +203,8 @@ final class OpcionesPorLlamadaTest extends TestCase
     public function testTotalTimeoutPorLlamadaCortaLosReintentos(): void
     {
         $transport = new FakeTransport(
-            new TransportResponse(503, '{"codigo":"002","mensaje":"No disponible."}'),
-            new TransportResponse(200, '{"datos":{"idCliente":"c"}}')
+            new TransportResponse(503, '{"estado":"error","codEstado":5002,"msgError":"No disponible."}'),
+            new TransportResponse(200, '{"idCliente":"c"}')
         );
         $cliente = $this->cliente($transport, ['retryBaseDelaySeconds' => 1.0, 'maxAttempts' => 3]);
         try {
@@ -217,21 +218,19 @@ final class OpcionesPorLlamadaTest extends TestCase
 
     public function testVistaPorContribuyenteYHelpersAceptanOpciones(): void
     {
-        $operacion = '{"datos":{"idOperacion":"' . self::UUID . '","estado":"enviado","estadoAutorizacion":"autorizado"}}';
+        $operacion = '{"idOperacion":"' . self::UUID . '","estado":"autorizado"}';
         $transport = new FakeTransport(
-            new TransportResponse(200, '{"datos":{"comprobantes":[{"claveAcceso":"1"}],"hayMas":false}}'),
             new TransportResponse(200, $operacion),
             new TransportResponse(200, 'PDF', ['Content-Type' => 'application/pdf']),
-            new TransportResponse(200, '{"datos":{"identificacion":"0123456789"}}')
+            new TransportResponse(200, '{"identificacion":"0123456789"}')
         );
         $vista = $this->cliente($transport)->para('0123456789');
         $opciones = new RequestOptions(correlationId: 'vista-1');
-        iterator_to_array($vista->iterarEmitidos(null, $opciones));
         $vista->esperarResultado(self::UUID, 0.0, 1.0, $opciones);
         $vista->descargarRide('clave', $opciones);
         $vista->getPerfil($opciones);
-        self::assertCount(4, $transport->peticiones);
-        for ($i = 0; $i < 4; $i++) {
+        self::assertCount(3, $transport->peticiones);
+        for ($i = 0; $i < 3; $i++) {
             self::assertSame('vista-1', $transport->header($i, 'X-Correlation-Id'));
         }
     }
@@ -272,6 +271,6 @@ final class RegistroTimeoutTransport implements TimeoutOverrideTransportInterfac
 
     private function ok(): TransportResponse
     {
-        return new TransportResponse(200, '{"datos":{"idCliente":"c"}}');
+        return new TransportResponse(200, '{"idCliente":"c"}');
     }
 }

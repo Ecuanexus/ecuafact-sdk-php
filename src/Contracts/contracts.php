@@ -233,7 +233,8 @@ class MaquinaFiscal
 class InfoTributaria
 {
     public ?string $ruc = null;
-    public ?string $codDoc = null;
+    /** Tipo de comprobante (`01`, `03`, `04`, `05`, `06`, `07`). */
+    public ?string $tipoDocumento = null;
     public ?string $estab = null;
     public ?string $ptoEmi = null;
     public ?string $secuencial = null;
@@ -342,47 +343,63 @@ class ComprobanteRequest
 // Respuestas
 // ---------------------------------------------------------------------------
 
+/**
+ * Forma unica de error de todo el API: `{ estado, codEstado, msgError, errores }`. Los rechazos sincronicos de
+ * la emision traen ademas los campos de {@see Admission}, que el SDK conserva en `extra`.
+ */
 class ApiError
 {
     /** @var array<string, mixed> Campos del API que este modelo no declara. */
     public array $extra = [];
 
-    public ?string $codigo = null;
-    public ?string $mensaje = null;
-    /** @var string[] */
+    /** `rechazado`, `rechazo_configuracion` o `error`. */
+    public ?string $estado = null;
+    /** Codigo numerico de 4 digitos (ver {@see CodEstado}). */
+    public ?int $codEstado = null;
+    /** Descripcion general y fija del codigo. */
+    public ?string $msgError = null;
+    /** @var string[] Detalle especifico (ruta del campo, mensaje del SRI...); vacio si no hay detalle. */
     public ?array $errores = null;
 }
 
+/**
+ * Respuesta de la emision (202) y, con la misma forma, de la operacion ({@see Operation}).
+ *
+ * `estado` y `codEstado` describen el resultado actual: 1001 recibido sin clave, 1002 recibido con
+ * `claveAcceso`, 2001 autorizado (envio directo) o un estado final 3xxx/4xxx/5xxx/6xxx. Consulta
+ * `idOperacion` (o `urlEstado`) hasta un estado final.
+ */
 class Admission
 {
     /** @var array<string, mixed> Campos del API que este modelo no declara. */
     public array $extra = [];
 
-    public ?string $codigo = null;
-    public ?string $mensaje = null;
-    public ?string $idOperacion = null;
-    public ?string $urlEstado = null;
-    public ?string $uid = null;
-}
-
-class Operation
-{
-    /** @var array<string, mixed> Campos del API que este modelo no declara. */
-    public array $extra = [];
-
-    public ?string $idOperacion = null;
-    public ?string $uid = null;
-    public ?int $ambiente = null;
-    public ?string $codDoc = null;
+    /** `recibido`, `autorizado`, `rechazado`, `rechazo_configuracion`, `error` o `cancelado`. */
     public ?string $estado = null;
+    /** Codigo numerico de 4 digitos; el primer digito es el `estado` (ver {@see CodEstado}). */
+    public ?int $codEstado = null;
+    /** Descripcion general del codigo; null cuando no hay error (el API la omite). */
+    public ?string $msgError = null;
+    /** @var string[] Detalle especifico del resultado; vacio si no hay detalle. */
+    public ?array $errores = null;
+    /** Identificador (GUID) de la operacion. */
+    public ?string $idOperacion = null;
+    /** URL absoluta de la operacion: `https://<host del ambiente>/v1/operaciones/{idOperacion}`. */
+    public ?string $urlEstado = null;
+    /** Ambiente fiscal: 1 pruebas, 2 produccion. */
+    public ?int $ambiente = null;
+    /** `01`, `03`, `04`, `05`, `06` o `07`. */
+    public ?string $tipoDocumento = null;
+    /** `estab-ptoEmi-secuencial`, por ejemplo `001-001-000000123`. */
+    public ?string $numeroDocumento = null;
+    /** Referencia que envio el cliente. */
+    public ?string $referenciaExterna = null;
+    /** Clave de acceso de 49 digitos; null con 1001. */
     public ?string $claveAcceso = null;
-    public ?string $codigoError = null;
-    public ?string $fechaCreacion = null;
-    public ?string $fechaActualizacion = null;
-    public ?string $estadoAutorizacion = null;
-    public ?string $fechaAutorizacion = null;
-    public ?string $fechaConsulta = null;
-    public ?string $codigoErrorConsulta = null;
+    /** Momento en que la API acepto la emision (fecha-hora con zona). */
+    public ?string $fhRecibido = null;
+    /** Fecha-hora de autorizacion con zona, cuando existe. */
+    public ?string $fhAutorizacion = null;
 
     /** `estado` tipado; un valor nuevo del API se lee como EstadoOperacion::Desconocido. */
     public function estadoOperacion(): EstadoOperacion
@@ -390,37 +407,31 @@ class Operation
         return EstadoOperacion::desdeValor($this->estado);
     }
 
-    /** `estadoAutorizacion` tipado; un valor nuevo se lee como EstadoAutorizacion::Desconocido. */
-    public function estadoAutorizacionTipado(): EstadoAutorizacion
-    {
-        return EstadoAutorizacion::desdeValor($this->estadoAutorizacion);
-    }
-
-    /** `codDoc` tipado; null si el codigo no se reconoce. */
+    /** `tipoDocumento` tipado; null si el codigo no se reconoce. */
     public function tipoComprobante(): ?TipoComprobante
     {
-        return TipoComprobante::desdeValor($this->codDoc);
+        return TipoComprobante::desdeValor($this->tipoDocumento);
     }
 
     /**
-     * True cuando la operacion ya no cambiara: `estadoAutorizacion` autorizado o error,
-     * o `estado` rechazado o cancelado.
+     * True cuando el resultado ya no cambiara: `estado` autorizado, rechazado, rechazo_configuracion,
+     * error o cancelado. `recibido` y un valor desconocido no son finales.
      */
     public function esFinal(): bool
     {
-        $autorizacion = $this->estadoAutorizacionTipado();
-        if ($autorizacion === EstadoAutorizacion::Autorizado || $autorizacion === EstadoAutorizacion::Error) {
-            return true;
-        }
-        $estado = $this->estadoOperacion();
-        return $estado === EstadoOperacion::Rechazado || $estado === EstadoOperacion::Cancelado;
+        return $this->estadoOperacion()->esFinal();
     }
 
-    /** True cuando `estadoAutorizacion` es autorizado. */
+    /** True cuando `estado` es autorizado. */
     public function esAutorizado(): bool
     {
-        return $this->estadoAutorizacionTipado() === EstadoAutorizacion::Autorizado;
+        return $this->estadoOperacion()->esAutorizado();
     }
+}
+
+/** Estado de una operacion (`GET v1/operaciones/{idOperacion}`): misma forma que {@see Admission}. */
+class Operation extends Admission
+{
 }
 
 class QuotaBucket
@@ -450,6 +461,8 @@ class Contribuyente
     public ?bool $puedeRecibir = null;
     /** @var string[] */
     public ?array $tiposComprobante = null;
+    /** `true` si el contribuyente usa marca blanca. Lo configura Ecuafact; no se envia en ninguna solicitud. */
+    public ?bool $marcaBlanca = null;
 }
 
 class Contexto
@@ -463,52 +476,8 @@ class Contexto
     public ?array $contribuyentes = null;
 }
 
-/** Fila del listado de emitidos. `total` se lee como float (precision de double). */
-class Comprobante
-{
-    /** @var array<string, mixed> Campos del API que este modelo no declara. */
-    public array $extra = [];
-
-    public ?string $claveAcceso = null;
-    public ?string $numeroDocumento = null;
-    public ?string $codDoc = null;
-    public ?string $fechaEmision = null;
-    public ?string $identificacionContraparte = null;
-    public ?string $razonSocialContraparte = null;
-    public ?float $total = null;
-    public ?string $estadoAutorizacion = null;
-    public ?string $fechaAutorizacion = null;
-    public ?string $codigoError = null;
-    public ?string $fechaExpress = null;
-    public ?int $idExpressDocument = null;
-
-    /** `estadoAutorizacion` tipado; un valor nuevo se lee como EstadoAutorizacion::Desconocido. */
-    public function estadoAutorizacionTipado(): EstadoAutorizacion
-    {
-        return EstadoAutorizacion::desdeValor($this->estadoAutorizacion);
-    }
-
-    /** `codDoc` tipado; null si el codigo no se reconoce. */
-    public function tipoComprobante(): ?TipoComprobante
-    {
-        return TipoComprobante::desdeValor($this->codDoc);
-    }
-}
-
-class PaginaComprobantes
-{
-    /** @var array<string, mixed> Campos del API que este modelo no declara. */
-    public array $extra = [];
-
-    /** @var Comprobante[] */
-    public ?array $comprobantes = null;
-    public ?int $pagina = null;
-    public ?int $tamanoPagina = null;
-    public ?bool $hayMas = null;
-}
-
 // ---------------------------------------------------------------------------
-// Consultas externas del SRI (respuestas planas)
+// Consultas externas del SRI
 // ---------------------------------------------------------------------------
 
 class RepresentanteLegalConsulta
@@ -667,30 +636,6 @@ class PerfilEmisor
     public ?string $provincia = null;
     public ?string $pais = null;
     public ?string $logo = null;
-}
-
-class CorreoSolicitud
-{
-    public string $destinatario = '';
-}
-
-class CorreoEnviado
-{
-    /** @var array<string, mixed> Campos del API que este modelo no declara. */
-    public array $extra = [];
-
-    public string $claveAcceso = '';
-    public string $destinatario = '';
-}
-
-class CatalogoItem
-{
-    /** @var array<string, mixed> Campos del API que este modelo no declara. */
-    public array $extra = [];
-
-    public string $codigo = '';
-    public string $nombre = '';
-    public ?float $tarifa = null;
 }
 
 class PerfilEmisorUpdate

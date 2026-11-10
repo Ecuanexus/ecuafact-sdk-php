@@ -5,11 +5,8 @@ declare(strict_types=1);
 namespace Ecuafact\Sdk;
 
 use Ecuafact\Sdk\Contracts\ArchivoComprobante;
-use Ecuafact\Sdk\Contracts\Comprobante;
 use Ecuafact\Sdk\Contracts\ComprobanteRequest;
-use Ecuafact\Sdk\Contracts\CorreoEnviado;
 use Ecuafact\Sdk\Contracts\Operation;
-use Ecuafact\Sdk\Contracts\PaginaComprobantes;
 use Ecuafact\Sdk\Contracts\PerfilEmisor;
 use Ecuafact\Sdk\Contracts\PerfilEmisorUpdate;
 use Ecuafact\Sdk\Contracts\QuotaBucket;
@@ -49,17 +46,6 @@ final class EcuafactContribuyente
         return $this->client->validarEn($this->identificacion, $comprobante, $opciones);
     }
 
-    public function listarEmitidos(?ListadoRequest $filtros = null, ?RequestOptions $opciones = null): PaginaComprobantes
-    {
-        return $this->client->listarEmitidosEn($this->identificacion, $filtros, $opciones);
-    }
-
-    /** @return \Generator<int, Comprobante> */
-    public function iterarEmitidos(?ListadoRequest $filtros = null, ?RequestOptions $opciones = null): \Generator
-    {
-        return $this->client->iterarEmitidosEn($this->identificacion, $filtros, $opciones);
-    }
-
     public function descargarRide(string $claveAcceso, ?RequestOptions $opciones = null): ArchivoComprobante
     {
         return $this->client->descargarRide($this->identificacion, $claveAcceso, $opciones);
@@ -68,11 +54,6 @@ final class EcuafactContribuyente
     public function descargarXml(string $claveAcceso, ?RequestOptions $opciones = null): ArchivoComprobante
     {
         return $this->client->descargarXml($this->identificacion, $claveAcceso, $opciones);
-    }
-
-    public function enviarCorreo(string $claveAcceso, string $destinatario, ?RequestOptions $opciones = null): CorreoEnviado
-    {
-        return $this->client->enviarCorreo($this->identificacion, $claveAcceso, $destinatario, $opciones);
     }
 
     public function getPerfil(?RequestOptions $opciones = null): PerfilEmisor

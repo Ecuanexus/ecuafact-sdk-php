@@ -42,20 +42,20 @@ final class CalculadoraComprobante
     /** Rellena (en el mismo objeto) los valores vacios que se pueden calcular. */
     public function calcular(ComprobanteRequest $req): void
     {
-        $codDoc = $req->infoTributaria?->codDoc;
-        if ($codDoc === '06' || !in_array($codDoc, self::TIPOS, true)) {
+        $tipoDocumento = $req->infoTributaria?->tipoDocumento;
+        if ($tipoDocumento === '06' || !in_array($tipoDocumento, self::TIPOS, true)) {
             return;
         }
         $req->info ??= new InfoDocumento();
         $info = $req->info;
-        match ($codDoc) {
-            '01', '03', '04' => $this->calcularLineas($req, $info, $codDoc),
+        match ($tipoDocumento) {
+            '01', '03', '04' => $this->calcularLineas($req, $info, $tipoDocumento),
             '05' => $this->calcularNotaDebito($req, $info),
             '07' => $this->calcularRetencion($req),
         };
     }
 
-    private function calcularLineas(ComprobanteRequest $req, InfoDocumento $info, string $codDoc): void
+    private function calcularLineas(ComprobanteRequest $req, InfoDocumento $info, string $tipoDocumento): void
     {
         $info->moneda ??= 'DOLAR';
         $subtotal = '0';
@@ -124,16 +124,16 @@ final class CalculadoraComprobante
             return;
         }
         $info->totalSinImpuestos ??= $subtotal;
-        if ($codDoc !== '04') {
+        if ($tipoDocumento !== '04') {
             $info->totalDescuento ??= $descuentos;
         }
         $propina = '0';
-        if ($codDoc === '01') {
+        if ($tipoDocumento === '01') {
             $info->propina ??= $this->cero();
             $propina = D::normalizar($info->propina, 'propina');
         }
         $total = D::sumar(D::sumar(D::sumar(D::normalizar($info->totalSinImpuestos, 'totalSinImpuestos'), $iva), $ice), $propina);
-        if ($codDoc === '04') {
+        if ($tipoDocumento === '04') {
             $info->valorModificacion ??= $total;
             return;
         }
@@ -345,23 +345,23 @@ final class CalculadoraComprobante
     // -----------------------------------------------------------------------------------------
 
     /**
-     * Devuelve las inconsistencias del comprobante (no lanza). `$codDocEsperado` es el tipo del
-     * constructor; si es null se usa el `codDoc` del comprobante.
+     * Devuelve las inconsistencias del comprobante (no lanza). `$tipoDocumentoEsperado` es el tipo del
+     * constructor; si es null se usa el `tipoDocumento` del comprobante.
      *
      * @return Inconsistencia[]
      */
-    public function validar(ComprobanteRequest $req, ?string $codDocEsperado = null): array
+    public function validar(ComprobanteRequest $req, ?string $tipoDocumentoEsperado = null): array
     {
         $this->errores = [];
-        $this->validarComun($req, $codDocEsperado);
-        $codDoc = $codDocEsperado ?? $req->infoTributaria?->codDoc;
+        $this->validarComun($req, $tipoDocumentoEsperado);
+        $tipoDocumento = $tipoDocumentoEsperado ?? $req->infoTributaria?->tipoDocumento;
         $info = $req->info;
         if ($info === null) {
             $this->error('info', 'Es obligatorio.');
             return $this->errores;
         }
-        match ($codDoc) {
-            '01', '03', '04' => $this->validarLineas($req, $info, $codDoc),
+        match ($tipoDocumento) {
+            '01', '03', '04' => $this->validarLineas($req, $info, $tipoDocumento),
             '05' => $this->validarNotaDebito($req, $info),
             '06' => $this->validarGuia($req, $info),
             '07' => $this->validarRetencion($req, $info),
@@ -370,7 +370,7 @@ final class CalculadoraComprobante
         return $this->errores;
     }
 
-    private function validarComun(ComprobanteRequest $req, ?string $codDocEsperado): void
+    private function validarComun(ComprobanteRequest $req, ?string $tipoDocumentoEsperado): void
     {
         $this->patron('origenReferencia', $req->origenReferencia, '/^[A-Za-z0-9\-_.:\/]{1,64}$/D',
             'De 1 a 64 caracteres: letras y digitos ASCII y - _ . : /.');
@@ -382,12 +382,12 @@ final class CalculadoraComprobante
             return;
         }
         $this->patron('infoTributaria.ruc', $it->ruc, '/^\d{5,13}$/D', 'Solo digitos (RUC de 13 digitos).');
-        if ($it->codDoc === null || $it->codDoc === '') {
-            $this->error('infoTributaria.codDoc', 'Es obligatorio.');
-        } elseif (!in_array($it->codDoc, self::TIPOS, true)) {
-            $this->error('infoTributaria.codDoc', 'Tipo no admitido: usa 01, 03, 04, 05, 06 o 07.');
-        } elseif ($codDocEsperado !== null && $it->codDoc !== $codDocEsperado) {
-            $this->error('infoTributaria.codDoc', 'Debe ser ' . $codDocEsperado . ' para este constructor.');
+        if ($it->tipoDocumento === null || $it->tipoDocumento === '') {
+            $this->error('infoTributaria.tipoDocumento', 'Es obligatorio.');
+        } elseif (!in_array($it->tipoDocumento, self::TIPOS, true)) {
+            $this->error('infoTributaria.tipoDocumento', 'Tipo no admitido: usa 01, 03, 04, 05, 06 o 07.');
+        } elseif ($tipoDocumentoEsperado !== null && $it->tipoDocumento !== $tipoDocumentoEsperado) {
+            $this->error('infoTributaria.tipoDocumento', 'Debe ser ' . $tipoDocumentoEsperado . ' para este constructor.');
         }
         $this->patron('infoTributaria.estab', $it->estab, '/^\d{3}$/D', 'Debe tener 3 digitos (por ejemplo 001).');
         $this->patron('infoTributaria.ptoEmi', $it->ptoEmi, '/^\d{3}$/D', 'Debe tener 3 digitos (por ejemplo 001).');
@@ -404,10 +404,10 @@ final class CalculadoraComprobante
         }
     }
 
-    private function validarLineas(ComprobanteRequest $req, InfoDocumento $info, string $codDoc): void
+    private function validarLineas(ComprobanteRequest $req, InfoDocumento $info, string $tipoDocumento): void
     {
         $this->fecha('info.fechaEmision', $info->fechaEmision);
-        if ($codDoc === '03') {
+        if ($tipoDocumento === '03') {
             $this->requerido('info.tipoIdentificacionProveedor', $info->tipoIdentificacionProveedor);
             $this->requerido('info.identificacionProveedor', $info->identificacionProveedor);
             $this->requerido('info.razonSocialProveedor', $info->razonSocialProveedor);
@@ -417,7 +417,7 @@ final class CalculadoraComprobante
             $this->requerido('info.razonSocialComprador', $info->razonSocialComprador);
         }
         $this->moneda($info->moneda, true);
-        if ($codDoc === '04') {
+        if ($tipoDocumento === '04') {
             $this->documentoModificado($info);
             $this->requerido('info.motivo', $info->motivo);
         }
@@ -435,8 +435,8 @@ final class CalculadoraComprobante
         $grupos = [];
         foreach ($detalles as $i => $d) {
             $ruta = "detalles[$i]";
-            $this->requerido($ruta . ($codDoc === '04' ? '.codigoInterno' : '.codigoPrincipal'),
-                $codDoc === '04' ? $d->codigoInterno : $d->codigoPrincipal);
+            $this->requerido($ruta . ($tipoDocumento === '04' ? '.codigoInterno' : '.codigoPrincipal'),
+                $tipoDocumento === '04' ? $d->codigoInterno : $d->codigoPrincipal);
             $this->requerido("$ruta.descripcion", $d->descripcion);
             $cantidad = $this->numero("$ruta.cantidad", $d->cantidad, $this->precision->escalaCantidades);
             $precio = $this->numero("$ruta.precioUnitario", $d->precioUnitario, $this->precision->escalaCantidades);
@@ -531,28 +531,28 @@ final class CalculadoraComprobante
         if ($tsi !== null && $completo) {
             $this->igual('info.totalSinImpuestos', $tsi, $subtotal, 'No coincide con la suma de precioTotalSinImpuesto');
         }
-        if ($codDoc !== '04') {
+        if ($tipoDocumento !== '04') {
             $td = $this->numero('info.totalDescuento', $info->totalDescuento, $this->precision->escalaImportes);
             if ($td !== null && $completo) {
                 $this->igual('info.totalDescuento', $td, $descuentos, 'No coincide con la suma de los descuentos');
             }
         }
         $propina = '0';
-        if ($codDoc === '01') {
+        if ($tipoDocumento === '01') {
             $propina = $this->numero('info.propina', $info->propina, $this->precision->escalaImportes);
             if ($propina !== null && D::comparar($propina, '0') < 0) {
                 $this->error('info.propina', 'No puede ser negativa.');
             }
             $this->comprador01($info);
         }
-        $campoTotal = $codDoc === '04' ? 'valorModificacion' : 'importeTotal';
-        $total = $this->numero('info.' . $campoTotal, $codDoc === '04' ? $info->valorModificacion : $info->importeTotal,
+        $campoTotal = $tipoDocumento === '04' ? 'valorModificacion' : 'importeTotal';
+        $total = $this->numero('info.' . $campoTotal, $tipoDocumento === '04' ? $info->valorModificacion : $info->importeTotal,
             $this->precision->escalaImportes);
         if ($total !== null && $tsi !== null && $propina !== null && $completo) {
             $this->igual('info.' . $campoTotal, $total, D::sumar(D::sumar(D::sumar($tsi, $iva), $ice), $propina),
-                'No coincide con totalSinImpuestos + IVA + ICE' . ($codDoc === '01' ? ' + propina' : ''));
+                'No coincide con totalSinImpuestos + IVA + ICE' . ($tipoDocumento === '01' ? ' + propina' : ''));
         }
-        if ($codDoc === '04') {
+        if ($tipoDocumento === '04') {
             if ($info->totalDocumentoSustento !== null && $total !== null) {
                 $sustento = $this->numero('info.totalDocumentoSustento', $info->totalDocumentoSustento, $this->precision->escalaImportes);
                 if ($sustento !== null && D::comparar($sustento, '0') > 0 && D::comparar($total, $sustento) > 0) {
@@ -561,7 +561,7 @@ final class CalculadoraComprobante
             }
             return;
         }
-        if ($codDoc === '01' && $info->tipoIdentificacionComprador === '07' && $total !== null && D::comparar($total, '50') > 0) {
+        if ($tipoDocumento === '01' && $info->tipoIdentificacionComprador === '07' && $total !== null && D::comparar($total, '50') > 0) {
             $this->error('info.tipoIdentificacionComprador', 'Consumidor final solo hasta 50.00: identifica al comprador.');
         }
         $this->pagos('info.pagos', $info->pagos, $total, 'info.importeTotal');

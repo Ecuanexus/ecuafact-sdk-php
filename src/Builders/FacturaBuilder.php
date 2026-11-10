@@ -8,7 +8,7 @@ use Ecuafact\Sdk\Builders\Concerns\ConComprador;
 use Ecuafact\Sdk\Builders\Concerns\ConPagos;
 use Ecuafact\Sdk\Contracts\Detalle;
 
-/** Factura (codDoc 01). Crealo con `ComprobanteBuilder::factura()`. `moneda` empieza en `DOLAR`. */
+/** Factura (tipoDocumento 01). Crealo con `ComprobanteBuilder::factura()`. `moneda` empieza en `DOLAR`. */
 final class FacturaBuilder extends AbstractLineasBuilder
 {
     use ConComprador;
@@ -45,7 +45,7 @@ final class FacturaBuilder extends AbstractLineasBuilder
         return $this;
     }
 
-    protected function codDoc(): string
+    protected function tipoDocumento(): string
     {
         return '01';
     }

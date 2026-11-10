@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Ecuafact\Sdk\Builders;
 
 /**
- * Tarifas de IVA frecuentes del catalogo `GET /v1/catalogos/tarifas-iva`. El valor del caso es el
- * `codigoPorcentaje`. Para otra tarifa usa `Tarifa::iva($codigoPorcentaje, $tarifa)`.
+ * Tarifas de IVA frecuentes de la tabla del SRI. El valor del caso es el `codigoPorcentaje`.
+ * Para otra tarifa usa `Tarifa::iva($codigoPorcentaje, $tarifa)`.
  */
 enum Iva: string
 {

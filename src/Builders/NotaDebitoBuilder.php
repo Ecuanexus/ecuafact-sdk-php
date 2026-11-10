@@ -11,7 +11,7 @@ use Ecuafact\Sdk\Contracts\Impuesto;
 use Ecuafact\Sdk\Contracts\Motivo;
 
 /**
- * Nota de debito (codDoc 05). Crealo con `ComprobanteBuilder::notaDebito()`. Lleva `motivos` con su
+ * Nota de debito (tipoDocumento 05). Crealo con `ComprobanteBuilder::notaDebito()`. Lleva `motivos` con su
  * valor sin IVA y un unico IVA en `info.impuestos`; el total es `valorTotal`.
  */
 final class NotaDebitoBuilder extends AbstractComprobanteBuilder
@@ -71,7 +71,7 @@ final class NotaDebitoBuilder extends AbstractComprobanteBuilder
         return $this;
     }
 
-    protected function codDoc(): string
+    protected function tipoDocumento(): string
     {
         return '05';
     }

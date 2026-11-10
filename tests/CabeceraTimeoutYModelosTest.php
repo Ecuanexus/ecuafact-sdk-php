@@ -12,7 +12,6 @@ use Ecuafact\Sdk\EcuafactClientOptions;
 use Ecuafact\Sdk\EcuafactConfigurationException;
 use Ecuafact\Sdk\EcuafactConnectionException;
 use Ecuafact\Sdk\EcuafactTimeoutException;
-use Ecuafact\Sdk\ListadoRequest;
 use Ecuafact\Sdk\RequestOptions;
 use Ecuafact\Sdk\Support\Hydrator;
 use Ecuafact\Sdk\Support\Serialization;
@@ -58,32 +57,32 @@ final class CabeceraTimeoutYModelosTest extends TestCase
 
     public function testSinAdditionalInfoNoSeEnviaLaCabecera(): void
     {
-        $transport = new FakeTransport(new TransportResponse(200, '{"datos":{"idCliente":"c"}}'));
+        $transport = new FakeTransport(new TransportResponse(200, '{"idCliente":"c"}'));
         $this->cliente($transport)->getContexto();
         self::assertNull($transport->header(0, 'X-Additional-Info'));
 
-        $transport = new FakeTransport(new TransportResponse(200, '{"datos":{"idCliente":"c"}}'));
+        $transport = new FakeTransport(new TransportResponse(200, '{"idCliente":"c"}'));
         $this->cliente($transport, ['additionalInfo' => ''])->getContexto(new RequestOptions(additionalInfo: ''));
         self::assertNull($transport->header(0, 'X-Additional-Info'));
     }
 
     public function testAdditionalInfoDelClienteSeEnviaEnTodasLasSolicitudes(): void
     {
-        $operacion = '{"datos":{"idOperacion":"' . self::UUID . '","estado":"enviado","estadoAutorizacion":"autorizado"}}';
+        $operacion = '{"idOperacion":"' . self::UUID . '","estado":"autorizado"}';
         $transport = new FakeTransport(
             new TransportResponse(202, '{"idOperacion":"' . self::UUID . '"}'),
             new TransportResponse(200, $operacion),
-            new TransportResponse(200, '{"datos":{"comprobantes":[],"pagina":1,"tamanoPagina":50,"hayMas":false}}'),
+            new TransportResponse(200, '{"limiteDocumentos":20,"disponibles":20}'),
             new TransportResponse(200, '%PDF', ['Content-Type' => 'application/pdf']),
         );
         $client = $this->cliente($transport, ['additionalInfo' => 'erp=SAP; sucursal=Quito']);
 
         $comprobante = new ComprobanteRequest();
         $comprobante->infoTributaria = new InfoTributaria();
-        $comprobante->infoTributaria->codDoc = '01';
+        $comprobante->infoTributaria->tipoDocumento = '01';
         $client->para('0123456789')->emitir($comprobante, 'K-1');
         $client->esperarResultado(self::UUID, 0.0, 1.0);
-        iterator_to_array($client->iterarEmitidos(new ListadoRequest()));
+        $client->getConsumo();
         $client->descargarRide('0123456789', str_repeat('1', 49));
 
         self::assertCount(4, $transport->peticiones);
@@ -94,7 +93,7 @@ final class CabeceraTimeoutYModelosTest extends TestCase
 
     public function testAdditionalInfoPorLlamadaReemplazaAlDelCliente(): void
     {
-        $transport = new FakeTransport(new TransportResponse(200, '{"datos":{"idCliente":"c"}}'));
+        $transport = new FakeTransport(new TransportResponse(200, '{"idCliente":"c"}'));
         $client = $this->cliente($transport, ['additionalInfo' => 'cliente']);
         $client->getContexto(new RequestOptions(additionalInfo: 'llamada-1'));
         $client->getContexto();
@@ -104,7 +103,7 @@ final class CabeceraTimeoutYModelosTest extends TestCase
 
     public function testAdditionalInfoVacioEnLlamadaNoEnviaYNullUsaElDelCliente(): void
     {
-        $transport = new FakeTransport(new TransportResponse(200, '{"datos":{"idCliente":"c"}}'));
+        $transport = new FakeTransport(new TransportResponse(200, '{"idCliente":"c"}'));
         $client = $this->cliente($transport, ['additionalInfo' => 'cliente']);
         $client->getContexto(new RequestOptions(additionalInfo: ''));
         $client->getContexto(new RequestOptions(additionalInfo: null));
@@ -123,8 +122,8 @@ final class CabeceraTimeoutYModelosTest extends TestCase
                 self::assertStringContainsString('X-Additional-Info', $error->getMessage());
             }
             try {
-                new RequestOptions(additionalInfo: $valor);
-                self::fail('Se esperaba EcuafactConfigurationException por llamada: ' . json_encode($valor));
+                $creado = new RequestOptions(additionalInfo: $valor);
+                self::fail('Se esperaba EcuafactConfigurationException por llamada: ' . json_encode($valor) . ' Se creo ' . $creado::class . '.');
             } catch (EcuafactConfigurationException $error) {
                 self::assertStringContainsString('X-Additional-Info', $error->getMessage());
             }
@@ -255,11 +254,11 @@ final class CabeceraTimeoutYModelosTest extends TestCase
 
     public function testHydratorConservaCamposDesconocidosEnExtra(): void
     {
-        $json = json_decode('{"idOperacion":"' . self::UUID . '","estado":"enviado","campoNuevo":"x",'
+        $json = json_decode('{"idOperacion":"' . self::UUID . '","estado":"recibido","campoNuevo":"x",'
             . '"detalleNuevo":{"a":1,"b":[{"c":true}]},"extra":"del-api"}');
         /** @var Operation $operacion */
         $operacion = Hydrator::hydrate(Operation::class, $json);
-        self::assertSame('enviado', $operacion->estado);
+        self::assertSame('recibido', $operacion->estado);
         self::assertSame([
             'campoNuevo' => 'x',
             'detalleNuevo' => ['a' => 1, 'b' => [['c' => true]]],
@@ -271,15 +270,15 @@ final class CabeceraTimeoutYModelosTest extends TestCase
     {
         $transport = new FakeTransport(new TransportResponse(
             200,
-            '{"datos":{"idCliente":"c","nombre":"N","contribuyentes":[{"identificacion":"0123456789","nuevo":1}],"plan":"pro"}}'
+            '{"idCliente":"c","nombre":"N","contribuyentes":[{"identificacion":"0123456789","nuevo":1}],"plan":"pro"}'
         ));
         $contexto = $this->cliente($transport)->getContexto();
         self::assertSame(['plan' => 'pro'], $contexto->extra);
         self::assertSame(['nuevo' => 1], $contexto->contribuyentes[0]->extra);
 
         $operacion = new Operation();
-        $operacion->estado = 'enviado';
+        $operacion->estado = 'recibido';
         $operacion->extra = ['oculto' => 1];
-        self::assertSame('{"estado":"enviado"}', Serialization::encode($operacion));
+        self::assertSame('{"estado":"recibido"}', Serialization::encode($operacion));
     }
 }

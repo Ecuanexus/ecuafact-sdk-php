@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ecuafact\Sdk\Tests;
 
+use Ecuafact\Sdk\Contracts\CodEstado;
 use Ecuafact\Sdk\Contracts\ComprobanteRequest;
 use Ecuafact\Sdk\Contracts\InfoTributaria;
 use Ecuafact\Sdk\EcuafactAuthException;
@@ -18,8 +19,8 @@ use PHPUnit\Framework\TestCase;
 
 final class ValidarComprobanteTest extends TestCase
 {
-    private const VALIDO = '{"codigo":"200","mensaje":"Comprobante valido.","errores":[]}';
-    private const INVALIDO = '{"codigo":"302","mensaje":"Comprobante invalido.","errores":["$.detalles[0].impuestos[0].valor: Valor de impuesto no coincide con base y tasa."]}';
+    private const VALIDO = '{"valido":true}';
+    private const INVALIDO = '{"estado":"rechazado","codEstado":3002,"msgError":"El comprobante no cumple las validaciones.","errores":["$.detalles[0].impuestos[0].valor: Valor de impuesto no coincide con base y tasa."]}';
 
     /** @param array<string, mixed> $extra */
     private function cliente(TransportInterface $transport, array $extra = []): EcuafactClient
@@ -38,46 +39,61 @@ final class ValidarComprobanteTest extends TestCase
     {
         $comprobante = new ComprobanteRequest();
         $comprobante->infoTributaria = new InfoTributaria();
-        $comprobante->infoTributaria->codDoc = '01';
+        $comprobante->infoTributaria->tipoDocumento = '01';
         return $comprobante;
     }
 
     public function testComprobanteValidoDevuelveValidoTrue(): void
     {
         $transport = new FakeTransport(new TransportResponse(200, self::VALIDO, ['X-Correlation-Id' => 'corr-1']));
-        $resultado = $this->cliente($transport)->validar($this->comprobante());
+        $comprobante = $this->comprobante();
+        $resultado = $this->cliente($transport)->validar($comprobante);
 
         self::assertTrue($resultado->valido);
-        self::assertSame('200', $resultado->codigo);
-        self::assertSame('Comprobante valido.', $resultado->mensaje);
+        self::assertNull($resultado->codEstado);
+        self::assertNull($resultado->msgError);
         self::assertSame([], $resultado->errores);
         self::assertSame('corr-1', $resultado->correlationId);
         self::assertSame('POST', $transport->peticiones[0]['method']);
         self::assertSame(
-            'https://api.example/v1/contribuyentes/0123456789/comprobantes/validar',
+            'https://api.example/v1/contribuyentes/0123456789/facturas/validar',
             $transport->peticiones[0]['url']
         );
-        self::assertStringContainsString('"codDoc":"01"', (string) $transport->peticiones[0]['body']);
+        $cuerpo = json_decode((string) $transport->peticiones[0]['body'], true);
+        self::assertArrayNotHasKey('tipoDocumento', $cuerpo['infoTributaria']);
+        self::assertStringNotContainsString('"codDoc"', (string) $transport->peticiones[0]['body']);
+        self::assertSame('01', $comprobante->infoTributaria->tipoDocumento);
         self::assertStringStartsWith('application/json', (string) $transport->header(0, 'Content-Type'));
     }
 
-    public function testComprobanteInvalido302DevuelveValidoFalseSinLanzar(): void
+    public function testComprobanteInvalido422DevuelveValidoFalseSinLanzar(): void
     {
         $transport = new FakeTransport(new TransportResponse(422, self::INVALIDO));
         $resultado = $this->cliente($transport)->validarEn('0999999999', $this->comprobante());
 
         self::assertFalse($resultado->valido);
-        self::assertSame('302', $resultado->codigo);
-        self::assertSame('Comprobante invalido.', $resultado->mensaje);
+        self::assertSame(CodEstado::COMPROBANTE_INVALIDO, $resultado->codEstado);
+        self::assertSame('El comprobante no cumple las validaciones.', $resultado->msgError);
         self::assertSame(
             ['$.detalles[0].impuestos[0].valor: Valor de impuesto no coincide con base y tasa.'],
             $resultado->errores
         );
         self::assertSame(
-            'https://api.example/v1/contribuyentes/0999999999/comprobantes/validar',
+            'https://api.example/v1/contribuyentes/0999999999/facturas/validar',
             $transport->peticiones[0]['url']
         );
         self::assertCount(1, $transport->peticiones);
+    }
+
+    public function testValido200ConCuerpoVacioOInesperado(): void
+    {
+        foreach (['', '{}', '{"otro":1}', '[]'] as $cuerpo) {
+            $transport = new FakeTransport(new TransportResponse(200, $cuerpo));
+            $resultado = $this->cliente($transport)->validar($this->comprobante());
+            self::assertTrue($resultado->valido);
+            self::assertNull($resultado->codEstado);
+            self::assertSame([], $resultado->errores);
+        }
     }
 
     public function testVistaDeContribuyenteValida(): void
@@ -89,14 +105,14 @@ final class ValidarComprobanteTest extends TestCase
 
         self::assertTrue($resultado->valido);
         self::assertSame(
-            'https://api.example/v1/contribuyentes/0888888888/comprobantes/validar',
+            'https://api.example/v1/contribuyentes/0888888888/facturas/validar',
             $transport->peticiones[0]['url']
         );
     }
 
     public function testOtro422LanzaValidacion(): void
     {
-        $transport = new FakeTransport(new TransportResponse(422, '{"codigo":"999","mensaje":"Otro.","errores":[]}'));
+        $transport = new FakeTransport(new TransportResponse(422, '{"estado":"rechazado","codEstado":3003,"msgError":"Otro.","errores":[]}'));
         $this->expectException(EcuafactValidationException::class);
         $this->cliente($transport)->validar($this->comprobante());
     }
@@ -105,13 +121,13 @@ final class ValidarComprobanteTest extends TestCase
     {
         $transport = new FakeTransport(new TransportResponse(
             403,
-            '{"codigo":"103","mensaje":"Contribuyente no habilitado.","errores":[]}'
+            '{"estado":"rechazado","codEstado":3011,"msgError":"Contribuyente no habilitado.","errores":[]}'
         ));
         try {
             $this->cliente($transport)->validar($this->comprobante());
             self::fail('Se esperaba EcuafactAuthException.');
         } catch (EcuafactAuthException $exception) {
-            self::assertSame('103', $exception->codigo);
+            self::assertSame(CodEstado::ACCESO_DENEGADO, $exception->codEstado);
             self::assertSame(403, $exception->estadoHttp);
             self::assertNull($exception->idempotencyKey);
         }
@@ -131,7 +147,7 @@ final class ValidarComprobanteTest extends TestCase
     public function testReintentaAnte503SinIdempotencyKey(): void
     {
         $transport = new FakeTransport(
-            new TransportResponse(503, '{"codigo":"500","mensaje":"No disponible.","errores":[]}'),
+            new TransportResponse(503, '{"estado":"error","codEstado":5002,"msgError":"No disponible.","errores":[]}'),
             new TransportResponse(200, self::VALIDO)
         );
         $resultado = $this->cliente($transport)->validar($this->comprobante());
@@ -145,7 +161,7 @@ final class ValidarComprobanteTest extends TestCase
     public function testSinReintentosPorLlamadaNoReintenta503(): void
     {
         $transport = new FakeTransport(
-            new TransportResponse(503, '{"codigo":"500","mensaje":"No disponible.","errores":[]}'),
+            new TransportResponse(503, '{"estado":"error","codEstado":5002,"msgError":"No disponible.","errores":[]}'),
             new TransportResponse(200, self::VALIDO)
         );
         try {

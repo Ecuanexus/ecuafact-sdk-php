@@ -13,12 +13,12 @@ use PHPUnit\Framework\TestCase;
 /** Vectores 1 y 3 de la guia de verificacion de firma (webhooks-firma.md). */
 final class StandardWebhooksTest extends TestCase
 {
-    private const SECRETO = 'c2VjcmV0by1kZS1wcnVlYmFzLW5vLXVzYXItMzJieXQ=';
+    private const SECRETO = 'c2VjcmV0by1kZS1wcnVlYmFzLW5vLXVzYXItMzJieXQ='; // NOSONAR: valor sintetico de prueba
     private const ID = '9b2e4f7a-1c3d-4e5f-8a6b-7c8d9e0f1a2b';
     private const MARCA = 1791385446;
-    private const FIRMA = 'v1,6YgtHWzoIeuArJTPh8Oq8lpg//3ldAAsy1IRzD5eiG0=';
-    private const CABECERA_ECUAFACT = 't=1791385446,v1=a1ae78d763238168f09290d33a7647b3b3c685ff96ef3b60be203e453d772568';
-    private const CUERPO = '{"idOperacion":"3f1c8c1e-6f2a-4b7e-9c3d-2a1b0c9d8e7f","estado":"authorized","claveAcceso":"0710202601012345678900110010010000001231234567811","eventType":"document.authorized","resourceId":"3f1c8c1e-6f2a-4b7e-9c3d-2a1b0c9d8e7f","occurredAtUtc":"2026-10-07T15:04:05.1234567Z"}';
+    private const FIRMA = 'v1,/T8my8yemJHzoRx6P3g1CRN0GmUm89HowIdBouPHwGI=';
+    private const CABECERA_ECUAFACT = 't=1791385446,v1=823abf0c451c66e7969caa057869b36c57d43c726e86f668c2e0372e6eb15121';
+    private const CUERPO = '{"idOperacion":"3f1c8c1e-6f2a-4b7e-9c3d-2a1b0c9d8e7f","estado":"autorizado","claveAcceso":"0710202601012345678900110010010000001231234567811","eventType":"document.authorized","resourceId":"3f1c8c1e-6f2a-4b7e-9c3d-2a1b0c9d8e7f","occurredAtUtc":"2026-10-07T15:04:05.1234567Z"}';
 
     private static function verificar(string|array $secreto, string $firma, string $cuerpo = self::CUERPO, int $ahora = self::MARCA): bool
     {
@@ -59,15 +59,15 @@ final class StandardWebhooksTest extends TestCase
     public function testRechazaCuerpoAlterado(): void
     {
         self::assertFalse(self::verificar(self::SECRETO, self::FIRMA, self::CUERPO . ' '));
-        self::assertFalse(self::verificar(self::SECRETO, self::FIRMA, str_replace('authorized', 'rejected', self::CUERPO)));
+        self::assertFalse(self::verificar(self::SECRETO, self::FIRMA, str_replace('"autorizado"', '"rechazado"', self::CUERPO)));
     }
 
     public function testRechazaSecretoIncorrecto(): void
     {
         self::assertFalse(self::verificar(base64_encode(str_repeat('x', 32)), self::FIRMA));
-        // Usar el texto del secreto sin decodificar da la firma v1,PVfUF7A2... de la guia.
+        // Usar el texto del secreto sin decodificar da otra firma (v1,6xZMyUwD...), no la valida.
         $sinDecodificar = 'v1,' . base64_encode(hash_hmac('sha256', self::ID . '.' . self::MARCA . '.' . self::CUERPO, self::SECRETO, true));
-        self::assertStringStartsWith('v1,PVfUF7A2', $sinDecodificar);
+        self::assertStringStartsWith('v1,6xZMyUwD', $sinDecodificar);
         self::assertFalse(self::verificar(self::SECRETO, $sinDecodificar));
     }
 
@@ -159,7 +159,7 @@ final class StandardWebhooksTest extends TestCase
         self::assertSame('0710202601012345678900110010010000001231234567811', $evento->claveAcceso);
 
         $evento = WebhookEvent::construirDesdeCabeceras(self::SECRETO, ['Ecuafact-Signature' => self::CABECERA_ECUAFACT], self::CUERPO, 300, self::MARCA);
-        self::assertSame('authorized', $evento->estado);
+        self::assertSame('autorizado', $evento->estado);
 
         $this->expectException(EcuafactWebhookException::class);
         WebhookEvent::construirDesdeCabeceras(self::SECRETO, $cabeceras, self::CUERPO, 300, self::MARCA + 301);

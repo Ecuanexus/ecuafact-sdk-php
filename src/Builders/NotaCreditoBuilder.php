@@ -9,7 +9,7 @@ use Ecuafact\Sdk\Builders\Concerns\ConDocumentoModificado;
 use Ecuafact\Sdk\Contracts\Detalle;
 
 /**
- * Nota de credito (codDoc 04). Crealo con `ComprobanteBuilder::notaCredito()`. En `linea()`,
+ * Nota de credito (tipoDocumento 04). Crealo con `ComprobanteBuilder::notaCredito()`. En `linea()`,
  * `codigo` va a `codigoInterno` y `codigoAuxiliar` a `codigoAdicional`. El total es `valorModificacion`.
  */
 final class NotaCreditoBuilder extends AbstractLineasBuilder
@@ -43,7 +43,7 @@ final class NotaCreditoBuilder extends AbstractLineasBuilder
         return $this;
     }
 
-    protected function codDoc(): string
+    protected function tipoDocumento(): string
     {
         return '04';
     }

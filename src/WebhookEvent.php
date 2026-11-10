@@ -4,19 +4,27 @@ declare(strict_types=1);
 
 namespace Ecuafact\Sdk;
 
+use Ecuafact\Sdk\Contracts\EstadoOperacion;
 use Ecuafact\Sdk\Contracts\TipoEventoWebhook;
 
 /**
  * Evento de webhook de Ecuafact ya verificado.
  *
  * Campos del cuerpo: `eventType`, `resourceId`, `occurredAtUtc` y, segun el evento, `idOperacion`,
- * `estado` (`authorized`, `rejected`, `failed`), `claveAcceso`, `motivo`, `codigoError` y `probe`
- * (`"true"` en el evento de prueba del portal).
+ * `estado`, `tipoDocumento`, `claveAcceso`, `codEstado` (numerico, mismo catalogo que la operacion),
+ * `msgError` (se omite si no hay error), `errores` (detalle especifico), `fhAutorizacion` (si existe) y
+ * `probe` (`"true"` en el evento de prueba del portal).
+ *
+ * `document.authorized` llega con `estado` `autorizado`; `document.rejected`, solo con `rechazado` y
+ * `codEstado` 3001 (`rechazo_sri`); `document.failed`, con `rechazado` y 3002 (`comprobante_invalido`), con
+ * `rechazo_configuracion` o con `error`, y siempre es final. `operation.requires_attention` es un aviso no
+ * final: el documento sigue `recibido`. Un documento `cancelado` no genera evento.
  */
 final class WebhookEvent
 {
     /**
-     * @param array<string, mixed> $datos Cuerpo completo decodificado (incluye campos nuevos).
+     * @param array<string, mixed> $cuerpo Cuerpo completo decodificado (incluye campos nuevos).
+     * @param string[] $errores Detalle especifico del resultado; vacio si no hay.
      */
     public function __construct(
         public readonly TipoEventoWebhook $eventType,
@@ -26,11 +34,20 @@ final class WebhookEvent
         public readonly ?string $idOperacion,
         public readonly ?string $estado,
         public readonly ?string $claveAcceso,
-        public readonly ?string $motivo,
-        public readonly ?string $codigoError,
+        public readonly ?int $codEstado,
+        public readonly ?string $msgError,
+        public readonly ?string $tipoDocumento,
         public readonly bool $probe,
-        public readonly array $datos = [],
+        public readonly array $cuerpo = [],
+        public readonly array $errores = [],
+        public readonly ?string $fhAutorizacion = null,
     ) {
+    }
+
+    /** `estado` tipado; un valor nuevo (o ausente) se lee como EstadoOperacion::Desconocido. */
+    public function estadoOperacion(): EstadoOperacion
+    {
+        return EstadoOperacion::desdeValor($this->estado);
     }
 
     /**
@@ -107,11 +124,40 @@ final class WebhookEvent
             self::text($data['idOperacion'] ?? null),
             self::text($data['estado'] ?? null),
             self::text($data['claveAcceso'] ?? null),
-            self::text($data['motivo'] ?? null),
-            self::text($data['codigoError'] ?? null),
+            self::entero($data['codEstado'] ?? null),
+            self::text($data['msgError'] ?? null),
+            self::text($data['tipoDocumento'] ?? null),
             $probe === true || (is_string($probe) && strtolower(trim($probe)) === 'true'),
             $data,
+            self::lista($data['errores'] ?? null),
+            self::text($data['fhAutorizacion'] ?? null),
         );
+    }
+
+    private static function entero(mixed $value): ?int
+    {
+        if (is_int($value)) {
+            return $value;
+        }
+        if (is_string($value) && preg_match('/^\d{1,9}$/D', trim($value)) === 1) {
+            return (int) trim($value);
+        }
+        return null;
+    }
+
+    /** @return string[] */
+    private static function lista(mixed $value): array
+    {
+        $resultado = [];
+        if (is_array($value)) {
+            foreach ($value as $item) {
+                $texto = self::text($item);
+                if ($texto !== null) {
+                    $resultado[] = $texto;
+                }
+            }
+        }
+        return $resultado;
     }
 
     private static function text(mixed $value): ?string

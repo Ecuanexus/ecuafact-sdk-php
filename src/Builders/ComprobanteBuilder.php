@@ -91,19 +91,19 @@ final class ComprobanteBuilder
     }
 
     /**
-     * Constructor del tipo de `infoTributaria.codDoc` sobre una copia de un comprobante existente,
-     * para calcular sus valores vacios o validarlo. Lanza si `codDoc` no es 01, 03, 04, 05, 06 o 07.
+     * Constructor del tipo de `infoTributaria.tipoDocumento` sobre una copia de un comprobante existente,
+     * para calcular sus valores vacios o validarlo. Lanza si `tipoDocumento` no es 01, 03, 04, 05, 06 o 07.
      */
     public static function desde(ComprobanteRequest $comprobante, ?Precision $precision = null): AbstractComprobanteBuilder
     {
-        $clase = match ($comprobante->infoTributaria?->codDoc) {
+        $clase = match ($comprobante->infoTributaria?->tipoDocumento) {
             '01' => FacturaBuilder::class,
             '03' => LiquidacionCompraBuilder::class,
             '04' => NotaCreditoBuilder::class,
             '05' => NotaDebitoBuilder::class,
             '06' => GuiaRemisionBuilder::class,
             '07' => RetencionBuilder::class,
-            default => throw new EcuafactSdkException('infoTributaria.codDoc debe ser 01, 03, 04, 05, 06 o 07.'),
+            default => throw new EcuafactSdkException('infoTributaria.tipoDocumento debe ser 01, 03, 04, 05, 06 o 07.'),
         };
         return $clase::sobre($comprobante, $precision);
     }

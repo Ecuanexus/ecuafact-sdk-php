@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ecuafact\Sdk\Tests;
 
+use Ecuafact\Sdk\Contracts\CodEstado;
 use Ecuafact\Sdk\Contracts\ComprobanteRequest;
-use Ecuafact\Sdk\Contracts\EstadoAutorizacion;
 use Ecuafact\Sdk\Contracts\EstadoOperacion;
 use Ecuafact\Sdk\Contracts\InfoDocumento;
 use Ecuafact\Sdk\Contracts\InfoTributaria;
@@ -28,7 +28,6 @@ use Ecuafact\Sdk\EcuafactSdkException;
 use Ecuafact\Sdk\EcuafactServerException;
 use Ecuafact\Sdk\EcuafactTimeoutException;
 use Ecuafact\Sdk\EcuafactValidationException;
-use Ecuafact\Sdk\ListadoRequest;
 use Ecuafact\Sdk\RetryBackoff;
 use Ecuafact\Sdk\Support\Hydrator;
 use Ecuafact\Sdk\Support\Serialization;
@@ -78,21 +77,21 @@ final class MejorasSdkTest extends TestCase
     {
         $comprobante = new ComprobanteRequest();
         $comprobante->infoTributaria = new InfoTributaria();
-        $comprobante->infoTributaria->codDoc = '01';
+        $comprobante->infoTributaria->tipoDocumento = '01';
         return $comprobante;
     }
 
-    private static function operacionJson(string $estado, string $autorizacion): string
+    private static function operacionJson(string $estado): string
     {
-        return '{"datos":{"idOperacion":"' . self::UUID . '","estado":"' . $estado . '","estadoAutorizacion":"' . $autorizacion . '"}}';
+        return '{"idOperacion":"' . self::UUID . '","estado":"' . $estado . '"}';
     }
 
     // ---------------------------------------------------------------- 1.1 429
 
-    public function test429Con501NuncaSeReintentaNiConRetryRateLimited(): void
+    public function test429CupoAgotadoNuncaSeReintentaNiConRetryRateLimited(): void
     {
         $transport = new FakeTransport(
-            new TransportResponse(429, '{"codigo":"501","mensaje":"Cupo agotado."}', ['Retry-After' => '0']),
+            new TransportResponse(429, '{"estado":"rechazo_configuracion","codEstado":4004,"msgError":"Cupo agotado.","errores":[]}', ['Retry-After' => '0']),
             new TransportResponse(202, '{"idOperacion":"ok"}')
         );
         try {
@@ -100,45 +99,118 @@ final class MejorasSdkTest extends TestCase
             self::fail('Se esperaba EcuafactQuotaException.');
         } catch (EcuafactQuotaException $error) {
             self::assertCount(1, $transport->peticiones);
-            self::assertSame('501', $error->codigo);
+            self::assertSame(CodEstado::CUPO_AGOTADO, $error->codEstado);
+            self::assertSame('rechazo_configuracion', $error->estado);
+            self::assertSame(429, $error->status);
+            self::assertSame('Cupo agotado.', $error->msgError);
             self::assertFalse($error->esReintentable);
             self::assertSame('K-501', $error->idempotencyKey);
         }
     }
 
-    public function test429Con104NoSeReintentaPorDefecto(): void
+    public function test429LimiteSolicitudesNoSeReintentaConRetryRateLimitedFalse(): void
     {
         $transport = new FakeTransport(
-            new TransportResponse(429, '{"codigo":"104","mensaje":"Limite."}', ['Retry-After' => '7']),
+            new TransportResponse(429, '{"estado":"error","codEstado":5005,"msgError":"Limite."}', ['Retry-After' => '7']),
             new TransportResponse(202, '{"idOperacion":"ok"}')
         );
         try {
-            $this->cliente($transport)->emitirEn('0123456789', $this->comprobante(), 'K-104');
+            $this->cliente($transport, ['retryRateLimited' => false])->emitirEn('0123456789', $this->comprobante(), 'K-104');
             self::fail('Se esperaba EcuafactRateLimitException.');
         } catch (EcuafactRateLimitException $error) {
             self::assertCount(1, $transport->peticiones);
+            self::assertSame(CodEstado::LIMITE_SOLICITUDES, $error->codEstado);
             self::assertTrue($error->esReintentable);
             self::assertSame(7, $error->retryAfter);
         }
     }
 
-    public function test429Con104SeReintentaConRetryRateLimited(): void
+    public function test429LimiteSolicitudesSeReintentaPorDefecto(): void
     {
         $transport = new FakeTransport(
-            new TransportResponse(429, '{"codigo":104,"mensaje":"Limite."}', ['Retry-After' => '0']),
+            new TransportResponse(429, '{"estado":"error","codEstado":5005,"msgError":"Limite."}', ['Retry-After' => '0']),
             new TransportResponse(202, '{"idOperacion":"ok"}')
         );
-        $resultado = $this->cliente($transport, ['retryRateLimited' => true])
+        $resultado = $this->cliente($transport)
             ->emitirEn('0123456789', $this->comprobante(), 'K-104');
         self::assertSame('ok', $resultado->admission->idOperacion);
         self::assertCount(2, $transport->peticiones);
+        self::assertTrue((new EcuafactClientOptions('https://api.example/', self::API_KEY))->retryRateLimited);
+    }
+
+    public function test429SinCuerpoNoSeReintenta(): void
+    {
+        $transport = new FakeTransport(
+            new TransportResponse(429, '', ['Retry-After' => '0']),
+            new TransportResponse(202, '{"idOperacion":"ok"}')
+        );
+        try {
+            $this->cliente($transport)->emitirEn('0123456789', $this->comprobante(), 'K-429');
+            self::fail('Se esperaba EcuafactRateLimitException.');
+        } catch (EcuafactRateLimitException $error) {
+            self::assertCount(1, $transport->peticiones);
+            self::assertSame(0, $error->codEstado);
+            self::assertNull($error->estado);
+            self::assertFalse($error->esReintentable);
+        }
+    }
+
+    public function test429ConOtroCodigoNoSeReintenta(): void
+    {
+        $transport = new FakeTransport(
+            new TransportResponse(429, '{"estado":"error","codEstado":5001,"msgError":"Error interno.","errores":[]}', ['Retry-After' => '0']),
+            new TransportResponse(202, '{"idOperacion":"ok"}')
+        );
+        try {
+            $this->cliente($transport)->emitirEn('0123456789', $this->comprobante(), 'K-430');
+            self::fail('Se esperaba EcuafactRateLimitException.');
+        } catch (EcuafactRateLimitException $error) {
+            self::assertCount(1, $transport->peticiones);
+            self::assertFalse($error->esReintentable);
+        }
+    }
+
+    public function testCatalogoCodEstado(): void
+    {
+        self::assertSame(3002, CodEstado::COMPROBANTE_INVALIDO);
+        self::assertSame(4004, CodEstado::CUPO_AGOTADO);
+        self::assertSame(5005, CodEstado::LIMITE_SOLICITUDES);
+        self::assertCount(29, (new \ReflectionClass(CodEstado::class))->getConstants());
+        self::assertSame('comprobante_invalido', CodEstado::nombre(3002));
+        self::assertSame('operacion_cancelada', CodEstado::nombre(6001));
+        self::assertNull(CodEstado::nombre(3999));
+        self::assertSame(EstadoOperacion::Recibido, CodEstado::estado(1002));
+        self::assertSame(EstadoOperacion::Autorizado, CodEstado::estado(2001));
+        self::assertSame(EstadoOperacion::Rechazado, CodEstado::estado(3999));
+        self::assertSame(EstadoOperacion::RechazoConfiguracion, CodEstado::estado(4004));
+        self::assertSame(EstadoOperacion::Error, CodEstado::estado(5005));
+        self::assertSame(EstadoOperacion::Cancelado, CodEstado::estado(6001));
+        self::assertSame(EstadoOperacion::Desconocido, CodEstado::estado(7001));
+        self::assertSame(EstadoOperacion::Desconocido, CodEstado::estado(0));
+        self::assertSame(EstadoOperacion::Desconocido, CodEstado::estado(12345));
+    }
+
+    public function testCatalogoEstadosPublicos(): void
+    {
+        self::assertSame('rechazo_configuracion', \Ecuafact\Sdk\Contracts\EstadosPublicos::RECHAZO_CONFIGURACION);
+        self::assertCount(6, (new \ReflectionClass(\Ecuafact\Sdk\Contracts\EstadosPublicos::class))->getConstants());
+    }
+
+    public function testContextoExponeMarcaBlanca(): void
+    {
+        $transport = new FakeTransport(new TransportResponse(
+            200,
+            '{"idCliente":"c","contribuyentes":[{"identificacion":"0123456789001","marcaBlanca":true}]}'
+        ));
+        $contexto = $this->cliente($transport)->getContexto();
+        self::assertTrue($contexto->contribuyentes[0]->marcaBlanca);
     }
 
     // ---------------------------------------------------------------- 2.1 politica
 
     public function testCodigosReintentablesConfigurables(): void
     {
-        $transport = new FakeTransport(new TransportResponse(503, '{"codigo":"002"}'));
+        $transport = new FakeTransport(new TransportResponse(503, '{"estado":"error","codEstado":5002}'));
         try {
             $this->cliente($transport, ['retryableStatusCodes' => [500]])->getContexto();
             self::fail('Se esperaba EcuafactServerException.');
@@ -147,8 +219,8 @@ final class MejorasSdkTest extends TestCase
         }
 
         $transport = new FakeTransport(
-            new TransportResponse(500, '{"codigo":"002"}'),
-            new TransportResponse(200, '{"datos":{"idCliente":"c"}}')
+            new TransportResponse(500, '{"estado":"error","codEstado":5002}'),
+            new TransportResponse(200, '{"idCliente":"c"}')
         );
         self::assertSame('c', $this->cliente($transport, ['retryableStatusCodes' => [500]])->getContexto()->idCliente);
         self::assertCount(2, $transport->peticiones);
@@ -174,7 +246,7 @@ final class MejorasSdkTest extends TestCase
 
     public function testTotalTimeoutCortaLosReintentos(): void
     {
-        $transport = new FakeTransport(new TransportResponse(503, '{"codigo":"002"}'));
+        $transport = new FakeTransport(new TransportResponse(503, '{"estado":"error","codEstado":5002}'));
         $inicio = microtime(true);
         try {
             $this->cliente($transport, [
@@ -207,8 +279,8 @@ final class MejorasSdkTest extends TestCase
         ];
         foreach ($casos as $caso) {
             try {
-                new EcuafactClientOptions(...array_merge(['baseAddress' => 'https://api.example/', 'apiKey' => 'k'], $caso));
-                self::fail('Se esperaba EcuafactConfigurationException para ' . json_encode($caso));
+                $creado = new EcuafactClientOptions(...array_merge(['baseAddress' => 'https://api.example/', 'apiKey' => 'k'], $caso));
+                self::fail('Se esperaba EcuafactConfigurationException para ' . json_encode($caso) . ' Se creo ' . $creado::class . '.');
             } catch (EcuafactConfigurationException $error) {
                 self::assertInstanceOf(EcuafactSdkException::class, $error);
             }
@@ -279,7 +351,7 @@ final class MejorasSdkTest extends TestCase
         self::assertFalse($perfil->obligadoContabilidad);
         self::assertSame('123', $perfil->razonSocial);
 
-        $operacion = Hydrator::hydrate(Operation::class, json_decode('{"ambiente":"1","estado":"en_cola"}'));
+        $operacion = Hydrator::hydrate(Operation::class, json_decode('{"ambiente":"1","estado":"recibido"}'));
         self::assertSame(1, $operacion->ambiente);
 
         $perfil = Hydrator::hydrate(PerfilEmisor::class, json_decode('{"obligadoContabilidad":"true"}'));
@@ -288,7 +360,7 @@ final class MejorasSdkTest extends TestCase
 
     public function testRespuestaConTiposInesperadosDaExcepcionDelSdk(): void
     {
-        $transport = new FakeTransport(new TransportResponse(200, '{"datos":{"ambiente":{"x":1}}}'));
+        $transport = new FakeTransport(new TransportResponse(200, '{"ambiente":{"x":1}}'));
         try {
             $this->cliente($transport)->getOperacion(self::UUID);
             self::fail('Se esperaba EcuafactSdkException.');
@@ -297,31 +369,19 @@ final class MejorasSdkTest extends TestCase
             self::assertStringContainsString('Operation.ambiente', $error->getMessage());
         }
 
-        $transport = new FakeTransport(new TransportResponse(200, '{"datos":"texto"}'));
+        $transport = new FakeTransport(new TransportResponse(200, '"texto"'));
         $this->expectException(EcuafactSdkException::class);
         $this->cliente($transport)->getContexto();
     }
 
-    public function testLeeTotalStringDelListadoComoFloat(): void
+    public function testErrorConvierteErroresATexto(): void
     {
-        $transport = new FakeTransport(new TransportResponse(
-            200,
-            '{"datos":{"comprobantes":[{"claveAcceso":"C","total":"11.50","codDoc":"04","estadoAutorizacion":"autorizado"}],"pagina":1,"hayMas":false}}'
-        ));
-        $pagina = $this->cliente($transport)->listarEmitidosEn('0123456789');
-        self::assertSame(11.5, $pagina->comprobantes[0]->total);
-        self::assertSame(TipoComprobante::NotaCredito, $pagina->comprobantes[0]->tipoComprobante());
-        self::assertSame(EstadoAutorizacion::Autorizado, $pagina->comprobantes[0]->estadoAutorizacionTipado());
-    }
-
-    public function testErrorConCodigoNumerico(): void
-    {
-        $transport = new FakeTransport(new TransportResponse(422, '{"codigo":302,"mensaje":"Invalido.","errores":["a",5,{"x":1}]}'));
+        $transport = new FakeTransport(new TransportResponse(422, '{"estado":"rechazado","codEstado":3002,"msgError":"Invalido.","errores":["a",5,{"x":1}]}'));
         try {
             $this->cliente($transport)->getContexto();
             self::fail('Se esperaba EcuafactValidationException.');
         } catch (EcuafactValidationException $error) {
-            self::assertSame('302', $error->codigo);
+            self::assertSame(CodEstado::COMPROBANTE_INVALIDO, $error->codEstado);
             self::assertSame(['a', '5', '{"x":1}'], $error->errores);
         }
     }
@@ -330,7 +390,7 @@ final class MejorasSdkTest extends TestCase
 
     public function testApiKeyOcultaAlImprimir(): void
     {
-        $options = new EcuafactClientOptions('https://api.example/', self::API_KEY, proxy: 'http://u:clave-proxy@proxy:8080');
+        $options = new EcuafactClientOptions('https://api.example/', self::API_KEY, proxy: 'http://u:clave-proxy@proxy:8080'); // NOSONAR: valor sintetico de prueba
         $client = new EcuafactClient($options);
         self::assertSame(self::API_KEY, $options->apiKey);
         self::assertTrue(isset($options->apiKey));
@@ -350,8 +410,8 @@ final class MejorasSdkTest extends TestCase
     {
         foreach ([' ' . self::API_KEY, self::API_KEY . "\n", "clave\x01rara"] as $clave) {
             try {
-                new EcuafactClientOptions('https://api.example/', $clave);
-                self::fail('Se esperaba EcuafactConfigurationException.');
+                $creado = new EcuafactClientOptions('https://api.example/', $clave);
+                self::fail('Se esperaba EcuafactConfigurationException.' . ' Se creo ' . $creado::class . '.');
             } catch (EcuafactConfigurationException $error) {
                 self::assertStringNotContainsString(trim($clave), $error->getMessage());
                 self::assertStringNotContainsString(trim($clave), $error->getTraceAsString());
@@ -390,7 +450,7 @@ final class MejorasSdkTest extends TestCase
 
     public function testIdOperacionDebeSerUuid(): void
     {
-        $transport = new FakeTransport(new TransportResponse(200, self::operacionJson('en_cola', 'pendiente')));
+        $transport = new FakeTransport(new TransportResponse(200, self::operacionJson('recibido')));
         $client = $this->cliente($transport);
         foreach (['../consumo?x=', 'op-1', '', self::UUID . '/x'] as $id) {
             try {
@@ -406,7 +466,7 @@ final class MejorasSdkTest extends TestCase
 
     public function testLeeVariablesDeEntorno(): void
     {
-        putenv('ECUAFACT_API_KEY=clave-desde-entorno');
+        putenv('ECUAFACT_API_KEY=clave-desde-entorno'); // NOSONAR: valor sintetico de prueba
         putenv('ECUAFACT_BASE_URL=https://staging-api.mynexusapi.com/');
         $options = new EcuafactClientOptions();
         self::assertSame('clave-desde-entorno', $options->apiKey);
@@ -420,14 +480,14 @@ final class MejorasSdkTest extends TestCase
     public function testSinApiKeyNiEntornoDaErrorClaro(): void
     {
         try {
-            new EcuafactClientOptions(baseAddress: 'https://api.example/');
-            self::fail('Se esperaba EcuafactConfigurationException.');
+            $creado = new EcuafactClientOptions(baseAddress: 'https://api.example/');
+            self::fail('Se esperaba EcuafactConfigurationException.' . ' Se creo ' . $creado::class . '.');
         } catch (EcuafactConfigurationException $error) {
             self::assertStringContainsString('ECUAFACT_API_KEY', $error->getMessage());
         }
         try {
-            new EcuafactClientOptions(apiKey: 'k');
-            self::fail('Se esperaba EcuafactConfigurationException.');
+            $creado = new EcuafactClientOptions(apiKey: 'k');
+            self::fail('Se esperaba EcuafactConfigurationException.' . ' Se creo ' . $creado::class . '.');
         } catch (EcuafactConfigurationException $error) {
             self::assertStringContainsString('ECUAFACT_BASE_URL', $error->getMessage());
         }
@@ -437,16 +497,16 @@ final class MejorasSdkTest extends TestCase
     {
         foreach (['https://api.example/v1', 'https://api.example/v1/', 'https://api.example/V1', 'ftp://api.example/', 'api.example', '/relativa', 'https://api.example/?a=1'] as $url) {
             try {
-                new EcuafactClientOptions($url, 'k');
-                self::fail('Se esperaba EcuafactConfigurationException para ' . $url);
+                $creado = new EcuafactClientOptions($url, 'k');
+                self::fail('Se esperaba EcuafactConfigurationException para ' . $url . ' Se creo ' . $creado::class . '.');
             } catch (EcuafactConfigurationException $error) {
                 self::assertNotSame('', $error->getMessage());
             }
         }
         putenv('ECUAFACT_BASE_URL=https://api.example/v1/');
         try {
-            new EcuafactClientOptions(apiKey: 'k');
-            self::fail('Se esperaba EcuafactConfigurationException.');
+            $creado = new EcuafactClientOptions(apiKey: 'k');
+            self::fail('Se esperaba EcuafactConfigurationException.' . ' Se creo ' . $creado::class . '.');
         } catch (EcuafactConfigurationException $error) {
             self::assertStringContainsString('/v1', $error->getMessage());
         }
@@ -588,7 +648,7 @@ final class MejorasSdkTest extends TestCase
 
                     public function getBody(): string
                     {
-                        return '{"datos":{"idCliente":"psr"}}';
+                        return '{"idCliente":"psr"}';
                     }
                 };
             }
@@ -605,10 +665,10 @@ final class MejorasSdkTest extends TestCase
     public function testEsperarResultadoTerminaEnEstadoFinal(): void
     {
         $transport = new FakeTransport(
-            new TransportResponse(200, self::operacionJson('en_cola', 'no_disponible')),
-            new TransportResponse(200, self::operacionJson('enviado', 'pendiente')),
-            new TransportResponse(200, self::operacionJson('enviado', 'autorizado')),
-            new TransportResponse(200, self::operacionJson('enviado', 'pendiente'))
+            new TransportResponse(200, self::operacionJson('recibido')),
+            new TransportResponse(200, self::operacionJson('recibido')),
+            new TransportResponse(200, self::operacionJson('autorizado')),
+            new TransportResponse(200, self::operacionJson('recibido'))
         );
         $operacion = $this->cliente($transport)->esperarResultado(self::UUID, 0.01, 5.0);
         self::assertTrue($operacion->esFinal());
@@ -618,7 +678,7 @@ final class MejorasSdkTest extends TestCase
 
     public function testEsperarResultadoRespetaElMaximo(): void
     {
-        $transport = new FakeTransport(new TransportResponse(200, self::operacionJson('enviado', 'pendiente')));
+        $transport = new FakeTransport(new TransportResponse(200, self::operacionJson('recibido')));
         $inicio = microtime(true);
         $operacion = $this->cliente($transport)->esperarResultado(self::UUID, 0.05, 0.2);
         $transcurrido = microtime(true) - $inicio;
@@ -629,63 +689,15 @@ final class MejorasSdkTest extends TestCase
         self::assertLessThanOrEqual(8, count($transport->peticiones));
     }
 
-    public function testEsperarResultadoTerminaConRechazoOCancelacion(): void
+    public function testEsperarResultadoTerminaConCualquierEstadoFinalNoAutorizado(): void
     {
-        foreach (['rechazado', 'cancelado'] as $estado) {
-            $transport = new FakeTransport(new TransportResponse(200, self::operacionJson($estado, 'no_disponible')));
+        foreach (['rechazado', 'rechazo_configuracion', 'error', 'cancelado'] as $estado) {
+            $transport = new FakeTransport(new TransportResponse(200, self::operacionJson($estado)));
             $operacion = $this->cliente($transport)->esperarResultado(self::UUID, 10.0, 60.0);
             self::assertTrue($operacion->esFinal());
             self::assertFalse($operacion->esAutorizado());
             self::assertCount(1, $transport->peticiones);
         }
-    }
-
-    // ---------------------------------------------------------------- 3.2 iterarEmitidos
-
-    public function testIterarEmitidosRecorrePaginasDeFormaPerezosa(): void
-    {
-        $transport = new FakeTransport(
-            new TransportResponse(200, '{"datos":{"comprobantes":[{"claveAcceso":"A"},{"claveAcceso":"B"}],"pagina":1,"hayMas":true}}'),
-            new TransportResponse(200, '{"datos":{"comprobantes":[{"claveAcceso":"C"}],"pagina":2,"hayMas":true}}'),
-            new TransportResponse(200, '{"datos":{"comprobantes":[{"claveAcceso":"D"}],"pagina":3,"hayMas":false}}')
-        );
-        $filtros = (new ListadoRequest())->codDoc('01')->tamanoPagina(2);
-        $iterador = $this->cliente($transport)->iterarEmitidosEn('0123456789', $filtros);
-        self::assertCount(0, $transport->peticiones);
-        self::assertSame('A', $iterador->current()->claveAcceso);
-        self::assertCount(1, $transport->peticiones);
-
-        $claves = [];
-        foreach ($iterador as $comprobante) {
-            $claves[] = $comprobante->claveAcceso;
-        }
-        self::assertSame(['A', 'B', 'C', 'D'], $claves);
-        self::assertCount(3, $transport->peticiones);
-        self::assertStringContainsString('pagina=1', $transport->peticiones[0]['url']);
-        self::assertStringContainsString('pagina=3', $transport->peticiones[2]['url']);
-        self::assertStringContainsString('codDoc=01', $transport->peticiones[2]['url']);
-        self::assertNull($filtros->pagina);
-    }
-
-    public function testIterarEmitidosDesdeLaVistaYConRucPorDefecto(): void
-    {
-        $transport = new FakeTransport(new TransportResponse(200, '{"datos":{"comprobantes":[{"claveAcceso":"A"}],"hayMas":false}}'));
-        $claves = iterator_to_array($this->cliente($transport)->para('0123456789')->iterarEmitidos(), false);
-        self::assertCount(1, $claves);
-        self::assertStringContainsString('/v1/contribuyentes/0123456789/comprobantes/emitidos?pagina=1', $transport->peticiones[0]['url']);
-
-        $this->expectException(EcuafactSdkException::class);
-        $this->cliente($transport)->iterarEmitidos();
-    }
-
-    public function testFechasDeFiltroComoDateTime(): void
-    {
-        $transport = new FakeTransport(new TransportResponse(200, '{"datos":{"comprobantes":[],"hayMas":false}}'));
-        $filtros = (new ListadoRequest())
-            ->desde(new \DateTimeImmutable('2026-10-01 23:30:00', new \DateTimeZone('America/Guayaquil')))
-            ->hasta('2026-10-07');
-        $this->cliente($transport)->listarEmitidosEn('0123456789', $filtros);
-        self::assertStringContainsString('desde=2026-10-01&hasta=2026-10-07', $transport->peticiones[0]['url']);
     }
 
     // ---------------------------------------------------------------- 3.4 logo
@@ -694,7 +706,7 @@ final class MejorasSdkTest extends TestCase
     {
         $transport = new FakeTransport(new TransportResponse(
             200,
-            '{"datos":{"identificacion":"0123456789001","logo":"0123456789001_Logo.png","obligadoContabilidad":false}}'
+            '{"identificacion":"0123456789001","logo":"0123456789001_Logo.png","obligadoContabilidad":false}'
         ));
         $bytes = "\x89PNG\r\n\x1a\n\x00\x01binario";
         $perfil = $this->cliente($transport)->actualizarLogo('0123456789', $bytes, 'image/png', 'logo.png');
@@ -715,7 +727,7 @@ final class MejorasSdkTest extends TestCase
 
     public function testActualizarLogoNoSeReintentaYValidaArgumentos(): void
     {
-        $transport = new FakeTransport(new TransportResponse(503, '{"codigo":"002"}'));
+        $transport = new FakeTransport(new TransportResponse(503, '{"estado":"error","codEstado":5002}'));
         try {
             $this->cliente($transport)->actualizarLogo('0123456789', 'x', 'image/png', 'logo.png');
             self::fail('Se esperaba EcuafactServerException.');
@@ -731,19 +743,16 @@ final class MejorasSdkTest extends TestCase
     public function testEnumsConValorDesconocido(): void
     {
         $operacion = Hydrator::hydrate(Operation::class, json_decode(
-            '{"estado":"estado_nuevo","estadoAutorizacion":"otro","codDoc":"99"}'
+            '{"estado":"estado_nuevo","tipoDocumento":"99"}'
         ));
         self::assertSame(EstadoOperacion::Desconocido, $operacion->estadoOperacion());
-        self::assertSame(EstadoAutorizacion::Desconocido, $operacion->estadoAutorizacionTipado());
         self::assertNull($operacion->tipoComprobante());
         self::assertFalse($operacion->esFinal());
         self::assertSame('estado_nuevo', $operacion->estado);
 
-        $operacion->estado = 'resultado_desconocido';
-        $operacion->estadoAutorizacion = 'error';
-        $operacion->codDoc = '07';
-        self::assertSame(EstadoOperacion::ResultadoDesconocido, $operacion->estadoOperacion());
-        self::assertSame(EstadoAutorizacion::Error, $operacion->estadoAutorizacionTipado());
+        $operacion->estado = 'ERROR';
+        $operacion->tipoDocumento = '07';
+        self::assertSame(EstadoOperacion::Error, $operacion->estadoOperacion());
         self::assertSame(TipoComprobante::Retencion, $operacion->tipoComprobante());
         self::assertTrue($operacion->esFinal());
         self::assertFalse($operacion->esAutorizado());
@@ -753,28 +762,52 @@ final class MejorasSdkTest extends TestCase
         self::assertFalse($vacia->esFinal());
     }
 
+    public function testEsFinalPorCadaEstado(): void
+    {
+        $casos = [
+            'recibido' => [EstadoOperacion::Recibido, false, false],
+            'autorizado' => [EstadoOperacion::Autorizado, true, true],
+            'rechazado' => [EstadoOperacion::Rechazado, true, false],
+            'rechazo_configuracion' => [EstadoOperacion::RechazoConfiguracion, true, false],
+            'error' => [EstadoOperacion::Error, true, false],
+            'cancelado' => [EstadoOperacion::Cancelado, true, false],
+            'otro_estado' => [EstadoOperacion::Desconocido, false, false],
+        ];
+        self::assertCount(7, EstadoOperacion::cases());
+        foreach ($casos as $texto => [$enum, $final, $autorizado]) {
+            self::assertSame($enum, EstadoOperacion::desdeValor($texto), $texto);
+            self::assertSame($final, $enum->esFinal(), $texto);
+            self::assertSame($autorizado, $enum->esAutorizado(), $texto);
+            $operacion = new Operation();
+            $operacion->estado = $texto;
+            self::assertSame($final, $operacion->esFinal(), $texto);
+            self::assertSame($autorizado, $operacion->esAutorizado(), $texto);
+        }
+    }
+
     // ---------------------------------------------------------------- 3.7 excepciones
 
     public function testTipoDeExcepcionPorHttpYCodigo(): void
     {
         $casos = [
-            [401, '100', EcuafactAuthException::class, false],
-            [403, '103', EcuafactAuthException::class, false],
-            [400, '301', EcuafactValidationException::class, false],
-            [422, '302', EcuafactValidationException::class, false],
-            [404, '202', EcuafactNotFoundException::class, false],
-            [409, '401', EcuafactConflictException::class, false],
-            [429, '104', EcuafactRateLimitException::class, true],
-            [429, '501', EcuafactQuotaException::class, false],
-            [500, '002', EcuafactServerException::class, true],
-            [502, '002', EcuafactServerException::class, true],
-            [501, '005', EcuafactServerException::class, false],
-            [418, 'x', EcuafactApiException::class, false],
+            [401, CodEstado::CREDENCIALES_INVALIDAS, EcuafactAuthException::class, false],
+            [403, CodEstado::ACCESO_DENEGADO, EcuafactAuthException::class, false],
+            [400, CodEstado::SOLICITUD_INVALIDA, EcuafactValidationException::class, false],
+            [422, CodEstado::COMPROBANTE_INVALIDO, EcuafactValidationException::class, false],
+            [404, CodEstado::NO_ENCONTRADO, EcuafactNotFoundException::class, false],
+            [409, CodEstado::COMPROBANTE_DUPLICADO, EcuafactConflictException::class, false],
+            [429, CodEstado::LIMITE_SOLICITUDES, EcuafactRateLimitException::class, true],
+            [429, CodEstado::CUPO_AGOTADO, EcuafactQuotaException::class, false],
+            [500, CodEstado::ERROR_INTERNO, EcuafactServerException::class, true],
+            [502, CodEstado::ERROR_DEPENDENCIA, EcuafactServerException::class, true],
+            [501, CodEstado::NO_IMPLEMENTADO, EcuafactServerException::class, false],
+            [418, 3999, EcuafactApiException::class, false],
         ];
-        foreach ($casos as [$status, $codigo, $clase, $reintentable]) {
+        foreach ($casos as [$status, $codEstado, $clase, $reintentable]) {
+            $estado = CodEstado::estado($codEstado)->value;
             $transport = new FakeTransport(new TransportResponse(
                 $status,
-                '{"codigo":"' . $codigo . '","mensaje":"m"}',
+                '{"estado":"' . $estado . '","codEstado":' . $codEstado . ',"msgError":"m","errores":[]}',
                 ['X-Correlation-Id' => 'corr', 'Retry-After' => '3']
             ));
             try {
@@ -782,10 +815,13 @@ final class MejorasSdkTest extends TestCase
                 self::fail('Se esperaba ' . $clase);
             } catch (EcuafactApiException $error) {
                 self::assertSame($clase, $error::class, 'HTTP ' . $status);
-                self::assertSame($codigo, $error->codigo);
-                self::assertSame('m', $error->mensaje);
+                self::assertSame($codEstado, $error->codEstado);
+                self::assertSame($estado, $error->estado);
+                self::assertSame($status, $error->status);
+                self::assertSame('m', $error->msgError);
+                self::assertSame('m', $error->getMessage());
                 self::assertSame($status, $error->estadoHttp);
-                self::assertSame('corr', $error->idSeguimiento);
+                self::assertSame('corr', $error->correlationId);
                 self::assertSame(3, $error->retryAfter);
                 self::assertSame($reintentable, $error->esReintentable, 'HTTP ' . $status);
             }
@@ -799,15 +835,13 @@ final class MejorasSdkTest extends TestCase
         $transport = new FakeTransport(
             new TransportResponse(200, 'pdf', ['Content-Type' => 'application/pdf']),
             new TransportResponse(200, '<xml/>', ['Content-Type' => 'application/xml', 'X-Contenido' => 'provisional']),
-            new TransportResponse(200, '{"datos":{"claveAcceso":"CLAVE","destinatario":"a@b.com"}}'),
-            new TransportResponse(200, '{"datos":{"identificacion":"0123456789001","obligadoContabilidad":true}}'),
-            new TransportResponse(200, '{"datos":{"identificacion":"0123456789001","ciudad":"Quito"}}'),
-            new TransportResponse(200, '{"datos":{"identificacion":"0123456789001","logo":"l.png"}}')
+            new TransportResponse(200, '{"identificacion":"0123456789001","obligadoContabilidad":true}'),
+            new TransportResponse(200, '{"identificacion":"0123456789001","ciudad":"Quito"}'),
+            new TransportResponse(200, '{"identificacion":"0123456789001","logo":"l.png"}')
         );
         $vista = $this->cliente($transport)->para('0123456789');
         self::assertSame('application/pdf', $vista->descargarRide('CLAVE')->contentType);
         self::assertTrue($vista->descargarXml('CLAVE')->provisional);
-        self::assertSame('a@b.com', $vista->enviarCorreo('CLAVE', 'a@b.com')->destinatario);
         self::assertTrue($vista->getPerfil()->obligadoContabilidad);
         $cambios = new PerfilEmisorUpdate();
         $cambios->ciudad = 'Quito';
@@ -817,10 +851,9 @@ final class MejorasSdkTest extends TestCase
         $base = 'https://api.example/v1/contribuyentes/0123456789';
         self::assertSame($base . '/comprobantes/CLAVE/ride', $transport->peticiones[0]['url']);
         self::assertSame($base . '/comprobantes/CLAVE/xml', $transport->peticiones[1]['url']);
-        self::assertSame($base . '/comprobantes/CLAVE/correo', $transport->peticiones[2]['url']);
-        self::assertSame($base . '/perfil', $transport->peticiones[3]['url']);
-        self::assertSame('PUT', $transport->peticiones[4]['method']);
-        self::assertSame('{"ciudad":"Quito"}', $transport->peticiones[4]['body']);
-        self::assertSame($base . '/perfil/logo', $transport->peticiones[5]['url']);
+        self::assertSame($base . '/perfil', $transport->peticiones[2]['url']);
+        self::assertSame('PUT', $transport->peticiones[3]['method']);
+        self::assertSame('{"ciudad":"Quito"}', $transport->peticiones[3]['body']);
+        self::assertSame($base . '/perfil/logo', $transport->peticiones[4]['url']);
     }
 }

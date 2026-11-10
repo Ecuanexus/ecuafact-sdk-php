@@ -10,7 +10,7 @@ use Ecuafact\Sdk\Contracts\RetencionLinea;
 use Ecuafact\Sdk\EcuafactSdkException;
 
 /**
- * Comprobante de retencion (codDoc 07). Crealo con `ComprobanteBuilder::retencion()`. Lleva un solo
+ * Comprobante de retencion (tipoDocumento 07). Crealo con `ComprobanteBuilder::retencion()`. Lleva un solo
  * documento de sustento: llama a `docSustento()` antes de `impuestoSustento()`, `lineaRetencion()` y `pago()`.
  */
 final class RetencionBuilder extends AbstractComprobanteBuilder
@@ -121,7 +121,7 @@ final class RetencionBuilder extends AbstractComprobanteBuilder
         return $this;
     }
 
-    protected function codDoc(): string
+    protected function tipoDocumento(): string
     {
         return '07';
     }

@@ -5,19 +5,15 @@ declare(strict_types=1);
 namespace Ecuafact\Sdk;
 
 use Ecuafact\Sdk\Contracts\ArchivoComprobante;
-use Ecuafact\Sdk\Contracts\CatalogoItem;
-use Ecuafact\Sdk\Contracts\Comprobante;
-use Ecuafact\Sdk\Contracts\CorreoEnviado;
-use Ecuafact\Sdk\Contracts\CorreoSolicitud;
 use Ecuafact\Sdk\Contracts\Admission;
 use Ecuafact\Sdk\Contracts\BusquedaContribuyente;
 use Ecuafact\Sdk\Contracts\ClaveAccesoDecodificada;
+use Ecuafact\Sdk\Contracts\CodEstado;
 use Ecuafact\Sdk\Contracts\ComprobanteRequest;
 use Ecuafact\Sdk\Contracts\Contexto;
 use Ecuafact\Sdk\Contracts\ContribuyenteConsulta;
 use Ecuafact\Sdk\Contracts\EstablecimientosContribuyente;
 use Ecuafact\Sdk\Contracts\Operation;
-use Ecuafact\Sdk\Contracts\PaginaComprobantes;
 use Ecuafact\Sdk\Contracts\PerfilEmisor;
 use Ecuafact\Sdk\Contracts\PerfilEmisorUpdate;
 use Ecuafact\Sdk\Contracts\QuotaBucket;
@@ -45,12 +41,17 @@ use Ecuafact\Sdk\Transport\TransportResponse;
  */
 final class EcuafactClient
 {
-    /** Ultima pagina que recorre iterarEmitidos. */
-    public const MAX_PAGINA = 10000;
-
     private const IDEMPOTENCY_KEY_PATTERN = '/^[A-Za-z0-9\-_.:\/]{1,128}$/D';
     private const IDEMPOTENCY_KEY_MESSAGE = 'Idempotency-Key: solo letras, digitos y - _ . : /, maximo 128 caracteres.';
     private const UUID_PATTERN = '/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/D';
+    private const RUTAS_POR_TIPO = [
+        '01' => 'facturas',
+        '03' => 'liquidaciones-compra',
+        '04' => 'notas-credito',
+        '05' => 'notas-debito',
+        '06' => 'guias-remision',
+        '07' => 'retenciones',
+    ];
 
     private readonly TransportInterface $transport;
 
@@ -92,8 +93,10 @@ final class EcuafactClient
     }
 
     /**
-     * Emite un comprobante (202). Si no pasas `$idempotencyKey`, el SDK la genera y la reutiliza en
-     * los reintentos; la devuelve en `EmisionResultado::$idempotencyKey`.
+     * Emite un comprobante (202) en la ruta de su `infoTributaria.tipoDocumento`. El tipo no viaja en el
+     * cuerpo; si falta o no es 01, 03, 04, 05, 06 o 07, lanza {@see EcuafactSdkException} sin llamar al API.
+     * Si no pasas `$idempotencyKey`, el SDK la genera y la reutiliza en los reintentos; la devuelve en
+     * `EmisionResultado::$idempotencyKey`.
      *
      * @throws EcuafactApiException|EcuafactSdkException
      */
@@ -105,10 +108,19 @@ final class EcuafactClient
     ): EmisionResultado {
         $key = $idempotencyKey !== null && $idempotencyKey !== '' ? $idempotencyKey : bin2hex(random_bytes(16));
         $this->validateIdempotencyKey($key);
-        $path = 'v1/contribuyentes/' . rawurlencode($identificacion) . '/comprobantes';
+        $path = 'v1/contribuyentes/' . rawurlencode($identificacion) . '/' . $this->rutaPorTipo($comprobante);
         $correlation = null;
         /** @var Admission $admission */
-        $admission = $this->send('POST', $path, $comprobante, $key, true, Admission::class, false, $correlation, $opciones);
+        $admission = $this->send(
+            'POST',
+            $path,
+            $this->cuerpoSinTipo($comprobante),
+            $key,
+            Admission::class,
+            false,
+            $correlation,
+            $opciones
+        );
         return new EmisionResultado($admission, $key, $correlation);
     }
 
@@ -118,10 +130,11 @@ final class EcuafactClient
     }
 
     /**
-     * Valida un comprobante sin emitirlo (`POST .../comprobantes/validar`): mismas reglas que la emision,
-     * sin `Idempotency-Key`, sin consumir cupo ni emitir. Con 200 devuelve `valido = true`; con 422 y
-     * codigo 302 devuelve `valido = false` y los `errores` (no lanza). Cualquier otro error lanza como el
-     * resto de llamadas (por ejemplo 403/103 con {@see EcuafactAuthException}). Se reintenta como un GET.
+     * Valida un comprobante sin emitirlo (`POST` a la ruta de su `infoTributaria.tipoDocumento` + `/validar`):
+     * mismas reglas que la emision, sin `Idempotency-Key`, sin consumir cupo ni emitir. Con 200 devuelve
+     * `valido = true`; con 422 y `codEstado` 3002 (`comprobante_invalido`) devuelve `valido = false` y los
+     * `errores` (no lanza). Cualquier otro error lanza como el resto de llamadas (por ejemplo 403
+     * `acceso_denegado` con {@see EcuafactAuthException}). Se reintenta como un GET.
      *
      * @throws EcuafactApiException|EcuafactSdkException
      */
@@ -130,25 +143,33 @@ final class EcuafactClient
         ComprobanteRequest $comprobante,
         ?RequestOptions $opciones = null
     ): ValidacionResultado {
-        $path = 'v1/contribuyentes/' . rawurlencode($identificacion) . '/comprobantes/validar';
+        $path = 'v1/contribuyentes/' . rawurlencode($identificacion) . '/'
+            . $this->rutaPorTipo($comprobante) . '/validar';
         $headers = $this->buildJsonHeaders('application/json; charset=utf-8', null, $opciones);
         // Sin efectos: se reintenta como un GET aunque no lleve Idempotency-Key.
         $response = $this->requestWithRetry(
             'POST',
             $this->buildUrl($path),
             $headers,
-            Serialization::encode($comprobante),
+            Serialization::encode($this->cuerpoSinTipo($comprobante)),
             true,
             null,
             $opciones
         );
-        if ($response->status === 422 && $this->errorCode($response->body) === '302') {
-            return $this->parseValidacion($response, false, $opciones);
+        if ($response->status === 422 && $this->codEstado($response->body) === CodEstado::COMPROBANTE_INVALIDO) {
+            return $this->parseValidacionInvalida($response, $opciones);
         }
         if ($response->status >= 400) {
             throw $this->buildApiException($response, null, $opciones);
         }
-        return $this->parseValidacion($response, true, $opciones);
+        // El cuerpo del 200 no se interpreta: el estado HTTP basta.
+        return new ValidacionResultado(
+            true,
+            null,
+            null,
+            [],
+            $response->header('X-Correlation-Id') ?? $opciones?->correlationId
+        );
     }
 
     /**
@@ -160,7 +181,7 @@ final class EcuafactClient
     {
         $this->validateUuid($idOperacion);
         $correlation = null;
-        return $this->send('GET', 'v1/operaciones/' . rawurlencode($idOperacion), null, null, false, Operation::class, false, $correlation, $opciones);
+        return $this->send('GET', 'v1/operaciones/' . rawurlencode($idOperacion), null, null, Operation::class, false, $correlation, $opciones);
     }
 
     /** Igual que getOperacion. El API no expone un POST de consulta. */
@@ -206,27 +227,7 @@ final class EcuafactClient
     public function getContexto(?RequestOptions $opciones = null): Contexto
     {
         $correlation = null;
-        return $this->send('GET', 'v1/contexto', null, null, false, Contexto::class, false, $correlation, $opciones);
-    }
-
-    public function enviarCorreo(
-        string $identificacion,
-        string $claveAcceso,
-        string $destinatario,
-        ?RequestOptions $opciones = null
-    ): CorreoEnviado {
-        $cuerpo = new CorreoSolicitud();
-        $cuerpo->destinatario = $destinatario;
-        $path = 'v1/contribuyentes/' . rawurlencode($identificacion) . '/comprobantes/' . rawurlencode($claveAcceso) . '/correo';
-        $correlation = null;
-        return $this->send('POST', $path, $cuerpo, null, false, CorreoEnviado::class, false, $correlation, $opciones);
-    }
-
-    /** @return CatalogoItem[] */
-    public function listarCatalogo(string $nombre, ?RequestOptions $opciones = null): array
-    {
-        $correlation = null;
-        return $this->send('GET', 'v1/catalogos/' . rawurlencode($nombre), null, null, false, CatalogoItem::class, true, $correlation, $opciones);
+        return $this->send('GET', 'v1/contexto', null, null, Contexto::class, false, $correlation, $opciones);
     }
 
     public function descargarRide(string $identificacion, string $claveAcceso, ?RequestOptions $opciones = null): ArchivoComprobante
@@ -242,7 +243,7 @@ final class EcuafactClient
     public function getPerfil(string $identificacion, ?RequestOptions $opciones = null): PerfilEmisor
     {
         $correlation = null;
-        return $this->send('GET', $this->rutaPerfil($identificacion), null, null, false, PerfilEmisor::class, false, $correlation, $opciones);
+        return $this->send('GET', $this->rutaPerfil($identificacion), null, null, PerfilEmisor::class, false, $correlation, $opciones);
     }
 
     public function actualizarPerfil(
@@ -251,7 +252,7 @@ final class EcuafactClient
         ?RequestOptions $opciones = null
     ): PerfilEmisor {
         $correlation = null;
-        return $this->send('PUT', $this->rutaPerfil($identificacion), $cambios, null, false, PerfilEmisor::class, false, $correlation, $opciones);
+        return $this->send('PUT', $this->rutaPerfil($identificacion), $cambios, null, PerfilEmisor::class, false, $correlation, $opciones);
     }
 
     /**
@@ -294,7 +295,6 @@ final class EcuafactClient
             $cuerpo,
             'multipart/form-data; boundary=' . $boundary,
             null,
-            false,
             PerfilEmisor::class,
             false,
             $correlation,
@@ -306,44 +306,7 @@ final class EcuafactClient
     public function getConsumo(?RequestOptions $opciones = null): QuotaBucket
     {
         $correlation = null;
-        return $this->send('GET', 'v1/consumo', null, null, true, QuotaBucket::class, false, $correlation, $opciones);
-    }
-
-    public function listarEmitidos(?ListadoRequest $filtros = null, ?RequestOptions $opciones = null): PaginaComprobantes
-    {
-        return $this->listar($this->requireIdentificacion(), $filtros, $opciones);
-    }
-
-    public function listarEmitidosEn(
-        string $identificacion,
-        ?ListadoRequest $filtros = null,
-        ?RequestOptions $opciones = null
-    ): PaginaComprobantes {
-        return $this->listar($identificacion, $filtros, $opciones);
-    }
-
-    /**
-     * Recorre todas las paginas de emitidos del RUC por defecto siguiendo `hayMas` (perezoso).
-     *
-     * @return \Generator<int, Comprobante>
-     */
-    public function iterarEmitidos(?ListadoRequest $filtros = null, ?RequestOptions $opciones = null): \Generator
-    {
-        return $this->iterar($this->requireIdentificacion(), $filtros, $opciones);
-    }
-
-    /**
-     * Recorre todas las paginas de emitidos siguiendo `hayMas`, desde `filtros->pagina` (o 1) hasta
-     * la pagina 10000. Pide cada pagina solo cuando la necesitas. `$opciones` se aplica a cada pagina.
-     *
-     * @return \Generator<int, Comprobante>
-     */
-    public function iterarEmitidosEn(
-        string $identificacion,
-        ?ListadoRequest $filtros = null,
-        ?RequestOptions $opciones = null
-    ): \Generator {
-        return $this->iterar($identificacion, $filtros, $opciones);
+        return $this->send('GET', 'v1/consumo', null, null, QuotaBucket::class, false, $correlation, $opciones);
     }
 
     public function consultarContribuyente(
@@ -362,7 +325,7 @@ final class EcuafactClient
         }
         /** @var ContribuyenteConsulta $resultado */
         $correlation = null;
-        $resultado = $this->send('GET', $path, null, null, true, ContribuyenteConsulta::class, false, $correlation, $opciones);
+        $resultado = $this->send('GET', $path, null, null, ContribuyenteConsulta::class, false, $correlation, $opciones);
         return $resultado;
     }
 
@@ -390,7 +353,7 @@ final class EcuafactClient
         $path = 'v1/consultas/contribuyentes?' . implode('&', $parts);
         /** @var BusquedaContribuyente[] $resultado */
         $correlation = null;
-        $resultado = $this->send('GET', $path, null, null, true, BusquedaContribuyente::class, true, $correlation, $opciones);
+        $resultado = $this->send('GET', $path, null, null, BusquedaContribuyente::class, true, $correlation, $opciones);
         return $resultado;
     }
 
@@ -408,7 +371,7 @@ final class EcuafactClient
         }
         /** @var EstablecimientosContribuyente $resultado */
         $correlation = null;
-        $resultado = $this->send('GET', $path, null, null, true, EstablecimientosContribuyente::class, false, $correlation, $opciones);
+        $resultado = $this->send('GET', $path, null, null, EstablecimientosContribuyente::class, false, $correlation, $opciones);
         return $resultado;
     }
 
@@ -420,7 +383,7 @@ final class EcuafactClient
         $path = 'v1/consultas/identificacion/validar/' . rawurlencode($numero);
         /** @var ValidacionIdentificacion $resultado */
         $correlation = null;
-        $resultado = $this->send('GET', $path, null, null, true, ValidacionIdentificacion::class, false, $correlation, $opciones);
+        $resultado = $this->send('GET', $path, null, null, ValidacionIdentificacion::class, false, $correlation, $opciones);
         return $resultado;
     }
 
@@ -432,37 +395,13 @@ final class EcuafactClient
         $path = 'v1/consultas/comprobantes/decodificar/' . rawurlencode($claveAcceso);
         /** @var ClaveAccesoDecodificada $resultado */
         $correlation = null;
-        $resultado = $this->send('GET', $path, null, null, true, ClaveAccesoDecodificada::class, false, $correlation, $opciones);
+        $resultado = $this->send('GET', $path, null, null, ClaveAccesoDecodificada::class, false, $correlation, $opciones);
         return $resultado;
     }
 
     private function rutaPerfil(string $identificacion): string
     {
         return 'v1/contribuyentes/' . rawurlencode($identificacion) . '/perfil';
-    }
-
-    /** @return \Generator<int, Comprobante> */
-    private function iterar(string $identificacion, ?ListadoRequest $filtros, ?RequestOptions $opciones): \Generator
-    {
-        $actual = $filtros !== null ? clone $filtros : new ListadoRequest();
-        $pagina = $actual->pagina ?? 1;
-        if ($pagina < 1 || $pagina > self::MAX_PAGINA) {
-            throw new EcuafactSdkException('La pagina inicial debe estar entre 1 y ' . self::MAX_PAGINA . '.');
-        }
-        return (function () use ($identificacion, $actual, $pagina, $opciones): \Generator {
-            while (true) {
-                $actual->pagina = $pagina;
-                $resultado = $this->listar($identificacion, $actual, $opciones);
-                $comprobantes = $resultado->comprobantes ?? [];
-                foreach ($comprobantes as $comprobante) {
-                    yield $comprobante;
-                }
-                if ($resultado->hayMas !== true || $comprobantes === [] || $pagina >= self::MAX_PAGINA) {
-                    return;
-                }
-                $pagina++;
-            }
-        })();
     }
 
     private function descargarArchivo(
@@ -495,20 +434,11 @@ final class EcuafactClient
         return $archivo;
     }
 
-    private function listar(string $identificacion, ?ListadoRequest $filtros, ?RequestOptions $opciones): PaginaComprobantes
-    {
-        $path = 'v1/contribuyentes/' . rawurlencode($identificacion)
-            . '/comprobantes/emitidos' . $this->buildQuery($filtros);
-        $correlation = null;
-        return $this->send('GET', $path, null, null, false, PaginaComprobantes::class, false, $correlation, $opciones);
-    }
-
     private function send(
         string $method,
         string $path,
         ?object $body,
         ?string $idempotencyKey,
-        bool $flat,
         string $modelClass,
         bool $list = false,
         ?string &$correlationId = null,
@@ -521,7 +451,6 @@ final class EcuafactClient
             $json,
             $json !== null ? 'application/json; charset=utf-8' : null,
             $idempotencyKey,
-            $flat,
             $modelClass,
             $list,
             $correlationId,
@@ -535,7 +464,6 @@ final class EcuafactClient
         ?string $payload,
         ?string $contentType,
         ?string $idempotencyKey,
-        bool $flat,
         string $modelClass,
         bool $list,
         ?string &$correlationId,
@@ -551,7 +479,7 @@ final class EcuafactClient
             throw $this->buildApiException($response, $idempotencyKey, $opciones);
         }
         $correlationId = $response->header('X-Correlation-Id') ?? $opciones?->correlationId;
-        return $this->parse($response->body, $flat, $modelClass, $list);
+        return $this->parse($response->body, $modelClass, $list);
     }
 
     /** @return string[] */
@@ -575,10 +503,10 @@ final class EcuafactClient
         return $headers;
     }
 
-    private function parseValidacion(TransportResponse $response, bool $valido, ?RequestOptions $opciones): ValidacionResultado
+    private function parseValidacionInvalida(TransportResponse $response, ?RequestOptions $opciones): ValidacionResultado
     {
         $data = json_decode($response->body, true);
-        if (!is_array($data) || !isset($data['codigo']) || !is_scalar($data['codigo'])) {
+        if (!is_array($data)) {
             throw new EcuafactSdkException('Respuesta del API no reconocida.');
         }
         $errores = [];
@@ -589,11 +517,11 @@ final class EcuafactClient
                 }
             }
         }
-        $mensaje = isset($data['mensaje']) && is_scalar($data['mensaje']) ? (string) $data['mensaje'] : '';
+        $msgError = isset($data['msgError']) && is_scalar($data['msgError']) ? (string) $data['msgError'] : null;
         return new ValidacionResultado(
-            $valido,
-            (string) $data['codigo'],
-            $mensaje,
+            false,
+            EcuafactApiException::codEstadoDe($data),
+            $msgError,
             $errores,
             $response->header('X-Correlation-Id') ?? $opciones?->correlationId
         );
@@ -701,38 +629,29 @@ final class EcuafactClient
     private function shouldRetry(TransportResponse $response): bool
     {
         if ($response->status === 429) {
-            // 429/501 (cupo agotado) nunca se reintenta; 429/104 solo con retryRateLimited.
-            if ($this->errorCode($response->body) === '501') {
-                return false;
-            }
-            return $this->options->retryRateLimited;
+            // Solo el 429 con codEstado 5005 (limite_solicitudes), segun retryRateLimited. El 4004 (cupo_agotado),
+            // un 429 sin cuerpo o con otro codigo no se reintentan.
+            return $this->options->retryRateLimited
+                && $this->codEstado($response->body) === CodEstado::LIMITE_SOLICITUDES;
         }
         return in_array($response->status, $this->options->retryableStatusCodes, true);
     }
 
-    private function errorCode(string $body): ?string
+    /** `codEstado` de un cuerpo de error; 0 si no es JSON o no lo trae. */
+    private function codEstado(string $body): int
     {
         $decoded = json_decode($body, true);
-        if (!is_array($decoded) || !isset($decoded['codigo']) || !is_scalar($decoded['codigo'])) {
-            return null;
-        }
-        return (string) $decoded['codigo'];
+        return EcuafactApiException::codEstadoDe(is_array($decoded) ? $decoded : null);
     }
 
-    private function parse(string $text, bool $flat, string $modelClass, bool $list = false): mixed
+    private function parse(string $text, string $modelClass, bool $list = false): mixed
     {
-        if ($text === '') {
-            throw new EcuafactSdkException('El API no devolvio datos.');
+        if (trim($text) === '') {
+            throw new EcuafactSdkException('El API devolvio una respuesta vacia.');
         }
         $data = json_decode($text);
         if ($data === null && trim($text) !== 'null') {
             throw new EcuafactSdkException('Respuesta del API no reconocida.');
-        }
-        if (!$flat) {
-            $data = is_object($data) && property_exists($data, 'datos') ? $data->datos : null;
-            if ($data === null) {
-                throw new EcuafactSdkException('El API no devolvio datos.');
-            }
         }
         if ($list) {
             $items = is_array($data) ? $data : [];
@@ -776,6 +695,33 @@ final class EcuafactClient
         );
     }
 
+    /** Segmento publico de la ruta de emision segun `infoTributaria.tipoDocumento`. */
+    private function rutaPorTipo(ComprobanteRequest $comprobante): string
+    {
+        $tipo = $comprobante->infoTributaria?->tipoDocumento;
+        if ($tipo === null || $tipo === '') {
+            throw new EcuafactSdkException('infoTributaria.tipoDocumento es obligatorio.');
+        }
+        if (!isset(self::RUTAS_POR_TIPO[$tipo])) {
+            throw new EcuafactSdkException('infoTributaria.tipoDocumento debe ser 01, 03, 04, 05, 06 o 07.');
+        }
+        return self::RUTAS_POR_TIPO[$tipo];
+    }
+
+    /**
+     * Copia del comprobante sin `infoTributaria.tipoDocumento`: el tipo viaja en la ruta.
+     * No modifica el objeto del usuario.
+     */
+    private function cuerpoSinTipo(ComprobanteRequest $comprobante): ComprobanteRequest
+    {
+        $copia = clone $comprobante;
+        if ($copia->infoTributaria !== null) {
+            $copia->infoTributaria = clone $copia->infoTributaria;
+            $copia->infoTributaria->tipoDocumento = null;
+        }
+        return $copia;
+    }
+
     private function requireIdentificacion(): string
     {
         $value = $this->options->identificacion;
@@ -792,30 +738,6 @@ final class EcuafactClient
     {
         $base = str_ends_with($this->options->baseAddress, '/') ? $this->options->baseAddress : $this->options->baseAddress . '/';
         return $base . $path;
-    }
-
-    private function buildQuery(?ListadoRequest $filtros): string
-    {
-        if ($filtros === null) {
-            return '';
-        }
-        $parts = [];
-        $this->append($parts, 'desde', $filtros->desde);
-        $this->append($parts, 'hasta', $filtros->hasta);
-        $this->append($parts, 'codDoc', $filtros->codDoc);
-        $this->append($parts, 'buscar', $filtros->buscar);
-        $this->append($parts, 'pagina', $filtros->pagina === null ? null : (string) $filtros->pagina);
-        $this->append($parts, 'tamanoPagina', $filtros->tamanoPagina === null ? null : (string) $filtros->tamanoPagina);
-        return $parts === [] ? '' : '?' . implode('&', $parts);
-    }
-
-    /** @param string[] $parts */
-    private function append(array &$parts, string $name, ?string $value): void
-    {
-        if ($value === null || $value === '') {
-            return;
-        }
-        $parts[] = $name . '=' . rawurlencode($value);
     }
 
     private function validateIdempotencyKey(string $key): void

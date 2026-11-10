@@ -11,8 +11,7 @@ use Ecuafact\Sdk\Support\DecimalMath;
  * Impuesto de una linea para los constructores: `codigo` (`2` IVA, `3` ICE), `codigoPorcentaje`
  * del catalogo y `tarifa` en porcentaje (`15`, no `0.15`).
  *
- * El SDK no cruza `codigoPorcentaje` con `tarifa`: envia la pareja exacta de
- * `GET /v1/catalogos/tarifas-iva` o `tarifas-ice`.
+ * El SDK no cruza `codigoPorcentaje` con `tarifa`: envia la pareja tal como la defines.
  */
 final class Tarifa
 {

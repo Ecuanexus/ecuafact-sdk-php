@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ecuafact\Sdk\Contracts;
 
-/** Tipo de comprobante (`codDoc`). */
+/** Tipo de comprobante (`tipoDocumento`). */
 enum TipoComprobante: string
 {
     case Factura = '01';
@@ -14,9 +14,9 @@ enum TipoComprobante: string
     case GuiaRemision = '06';
     case Retencion = '07';
 
-    /** Convierte el `codDoc`; devuelve null ante un codigo no reconocido (nunca falla). */
-    public static function desdeValor(?string $codDoc): ?self
+    /** Convierte el `tipoDocumento`; devuelve null ante un codigo no reconocido (nunca falla). */
+    public static function desdeValor(?string $tipoDocumento): ?self
     {
-        return $codDoc === null ? null : self::tryFrom(trim($codDoc));
+        return $tipoDocumento === null ? null : self::tryFrom(trim($tipoDocumento));
     }
 }

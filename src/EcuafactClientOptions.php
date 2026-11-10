@@ -14,7 +14,8 @@ use Ecuafact\Sdk\Transport\TransportInterface;
  * - `apiKey`: credencial de la integracion (cabecera `X-Api-Key`). Si no la pasas, se lee de
  *   `ECUAFACT_API_KEY`. Nunca aparece en `var_dump`, `print_r`, `json_encode` ni en las trazas.
  * - Reintentos: `retryTransientFailures` (los desactiva todos), `maxAttempts`, `respectRetryAfter`,
- *   `maxRetryDelaySeconds`, `retryRateLimited` (429/104; el 429/501 de cupo nunca se reintenta),
+ *   `maxRetryDelaySeconds`, `retryRateLimited` (por defecto `true`: reintenta solo el 429 con `codEstado` 5005,
+ *   `limite_solicitudes`, respetando `Retry-After`; el 429 4004 `cupo_agotado` y un 429 sin cuerpo nunca se reintentan),
  *   `retryableStatusCodes`, `retryBaseDelaySeconds`, `retryBackoff`, `retryJitterSeconds` y
  *   `totalTimeoutSeconds` (tope de toda la llamada, incluidos reintentos).
  * - Conexion (solo con el transporte cURL por defecto): `timeout` (por intento; 30 s por defecto),
@@ -60,7 +61,7 @@ final class EcuafactClientOptions
         public readonly ?TransportInterface $transport = null,
         public readonly bool $respectRetryAfter = true,
         public readonly float $maxRetryDelaySeconds = 60.0,
-        public readonly bool $retryRateLimited = false,
+        public readonly bool $retryRateLimited = true,
         ?array $retryableStatusCodes = null,
         public readonly float $retryBaseDelaySeconds = 0.2,
         RetryBackoff|string $retryBackoff = RetryBackoff::Linear,
