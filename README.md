@@ -4,7 +4,7 @@ Cliente oficial en PHP del API publico de facturacion electronica Ecuafact (cont
 autenticacion, idempotencia, reintentos configurables, espera del resultado, logo del perfil y firma de
 webhooks. Compatible con PHP 8.2+.
 
-Versión preliminar actual: `v1.0.0-beta6`.
+Versión preliminar actual: `v1.0.0-beta7`.
 
 ## Instalacion
 
