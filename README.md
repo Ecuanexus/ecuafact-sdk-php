@@ -4,7 +4,7 @@ Cliente oficial en PHP del API publico de facturacion electronica Ecuafact (cont
 autenticacion, idempotencia, reintentos configurables, espera del resultado, logo del perfil y firma de
 webhooks. Compatible con PHP 8.2+.
 
-Versión preliminar actual: `v1.0.0-beta7`.
+Versión preliminar actual: `v1.0.0-beta8`.
 
 ## Instalacion
 
@@ -28,7 +28,7 @@ contribuyente (por ejemplo `0123456789`).
 ```php
 <?php
 
-use Ecuafact\Sdk\Contracts\ComprobanteRequest;
+use Ecuafact\Sdk\Contracts\FacturaRequest;
 use Ecuafact\Sdk\Contracts\InfoTributaria;
 use Ecuafact\Sdk\EcuafactClient;
 use Ecuafact\Sdk\EcuafactClientOptions;
@@ -38,15 +38,14 @@ $client = new EcuafactClient(new EcuafactClientOptions(
     identificacion: '0123456789001', // identificacion de GET /v1/contexto (RUC de 13 digitos); opcional
 ));
 
-$comprobante = new ComprobanteRequest();
+$comprobante = new FacturaRequest();
 $comprobante->origenReferencia = 'MiERP';
 $comprobante->referenciaExterna = 'FACTURA-2026-0001';
 $comprobante->infoTributaria = new InfoTributaria();
 $comprobante->infoTributaria->ruc = '0123456789001'; // identificacion de GET /v1/contexto
-$comprobante->infoTributaria->tipoDocumento = '01';
 $comprobante->infoTributaria->estab = '002';
 $comprobante->infoTributaria->ptoEmi = '001';
-// $comprobante->info = ...; $comprobante->detalles = [...];
+// $comprobante->info = new InfoFactura(); $comprobante->detalles = [new DetalleCompraVenta(), ...];
 
 $resultado = $client->emitir($comprobante);          // 202 con estado "recibido": aun no autorizado
 $operacion = $client->esperarResultado($resultado->admission->idOperacion);
@@ -59,10 +58,16 @@ if ($operacion->esAutorizado()) {
 }
 ```
 
-`emitir` y `emitirEn` usan `infoTributaria.tipoDocumento` para elegir la ruta de emision y no envian ese
-campo en el cuerpo. El mapa es `01` facturas, `03` liquidaciones-compra, `04` notas-credito, `05`
-notas-debito, `06` guias-remision y `07` retenciones. Si falta o no es uno de los seis, lanzan
-`EcuafactSdkException` antes de llamar al API.
+Cada tipo de comprobante tiene su propia clase de solicitud, igual que tiene su propio endpoint, y `emitir`,
+`emitirEn`, `validar` y `validarEn` eligen la ruta por la clase que les pasas: `FacturaRequest` va a `facturas`,
+`LiquidacionCompraRequest` a `liquidaciones-compra`, `NotaCreditoRequest` a `notas-credito`, `NotaDebitoRequest` a
+`notas-debito`, `GuiaRemisionRequest` a `guias-remision` y `RetencionRequest` a `retenciones`. No hay campo de tipo
+en el cuerpo ni opcion de tipo en la llamada. Cada clase tiene solo las propiedades de su esquema del contrato y
+usa su `Info*` (`InfoFactura`, `InfoLiquidacionCompra`, `InfoNotaCredito`, `InfoNotaDebito`, `InfoGuiaRemision`,
+`InfoComprobanteRetencion`) y sus lineas (`DetalleCompraVenta` para factura y liquidacion, `DetalleNotaCredito`,
+`Motivo`, `Destinatario` con `DetalleGuia`, y `DocsSustento` con `ImpuestoDocSustento` y `RetencionLinea`), con los
+modelos comunes `InfoTributaria`, `Pago`, `Impuesto` y `CampoAdicional`. En el docblock de cada propiedad,
+`Obligatorio.` marca las que el contrato exige; el SDK no las valida, lo hace el API.
 
 ### Multi-RUC
 
@@ -74,7 +79,43 @@ $perfil = $ruc->actualizarLogo(file_get_contents('logo.png'), 'image/png', 'logo
 ```
 
 La vista expone `emitir`, `validar`, `descargarRide`, `descargarXml`, `getPerfil`, `actualizarPerfil`,
-`actualizarLogo`, `esperarResultado` y `getConsumo`.
+`actualizarLogo`, `esperarResultado`, `listarOperaciones` y `getConsumo`.
+
+## Listado de comprobantes y salud
+
+`listarOperaciones` (`GET /v1/operaciones`, sin consumir cupo) devuelve una `PaginaComprobantes` (`comprobantes`,
+`pagina`, `tamanoPagina`, `hayMas`). Filtros: `desde` y `hasta` (`yyyy-MM-dd`), `tipoDocumento` (codigo o nombre),
+`buscar`, `pagina` desde 1 y `tamanoPagina` de 1 a 100. `obtenerSalud()` llama a `GET /salud` (sin API Key) y devuelve
+`true`; con una respuesta que no es 2xx lanza la excepcion que corresponde.
+
+```php
+$pagina = 1;
+do {
+    $resultado = $client->listarOperaciones('0123456789001', desde: '2026-11-01', pagina: $pagina);
+    foreach ($resultado->comprobantes as $fila) {
+        echo $fila->numeroDocumento . ' ' . $fila->estado . PHP_EOL;
+    }
+    $pagina++;
+} while ($resultado->hayMas);
+```
+
+## Destinos de webhooks
+
+Administra los destinos desde el SDK: `listarWebhookDestinos`, `crearWebhookDestino`, `getWebhookDestino`,
+`actualizarWebhookEventos`, `rotarWebhookSecreto`, `probarWebhookDestino`, `pausarWebhookDestino`,
+`reanudarWebhookDestino`, `deshabilitarWebhookDestino`, `listarWebhookEntregas`, `listarWebhookIntentos` y
+`reintentarWebhookEntrega`. Los identificadores son UUID. El secreto de firma (`secretoUnaVez`) llega solo al crear el
+destino o al rotar el secreto: guardalo en ese momento. Estos metodos no se reintentan automaticamente.
+
+```php
+use Ecuafact\Sdk\Contracts\WebhookDestinoCrearRequest;
+
+$solicitud = new WebhookDestinoCrearRequest();
+$solicitud->url = 'https://miempresa.com/webhooks/ecuafact';
+$solicitud->eventos = ['document.authorized', 'document.rejected'];
+$destino = $client->crearWebhookDestino($solicitud);
+$client->probarWebhookDestino($destino->publicId);
+```
 
 ## Variables de entorno
 
@@ -83,8 +124,9 @@ La vista expone `emitir`, `validar`, `descargarRide`, `descargarXml`, `getPerfil
 | `ECUAFACT_API_KEY` | No pasas `apiKey` (o pasas `null`/`false`) | `ek_live_...` |
 | `ECUAFACT_BASE_URL` | No pasas `baseAddress` (o pasas `null`/`false`) | `https://staging-api.mynexusapi.com/` |
 
-El SDK no distingue ambientes: el ambiente lo define la URL. La URL debe ser absoluta (`http` o
-`https`) y **no** debe terminar en `/v1`: el SDK agrega `/v1` a cada ruta. Una URL invalida o una
+El SDK no distingue ambientes: el ambiente lo define la URL. La URL debe ser absoluta y usar
+`https`, sin usuario, consulta ni fragmento, y **no** debe terminar en `/v1`: el SDK agrega `/v1` a
+cada ruta. Una URL con `http`, una URL invalida o una
 API Key con espacios al inicio o al final o con caracteres de control lanza
 `EcuafactConfigurationException`.
 
@@ -110,11 +152,16 @@ Al reintentar, **reutiliza la clave devuelta**. La correlacion queda en `resulta
 
 ## Validar sin emitir
 
+Las reglas de negocio de los comprobantes (campos requeridos, formatos, catalogos, topes, coherencia aritmetica) viven
+solo en el API; el SDK no las revisa. `validar` siempre llama a `/validar` y `emitir` envia directo y lanza
+`EcuafactValidationException` con el 422 del API.
+
 `validar($comprobante)` y `validarEn($identificacion, $comprobante)` aplican las reglas de la emision sin
-emitir, sin consumir cupo y sin `Idempotency-Key`. Usan la ruta de `infoTributaria.tipoDocumento` y le agregan
-`/validar` (por ejemplo `.../notas-credito/validar`), y no envian `tipoDocumento` en el cuerpo. Devuelven
-`ValidacionResultado` (`valido`, `codEstado`, `msgError`, `errores`, `correlationId`). Con un comprobante valido,
-`codEstado` y `msgError` son `null` y `errores` esta vacio.
+emitir, sin consumir cupo y sin `Idempotency-Key`. Usan la ruta del tipo y le agregan
+`/validar` (por ejemplo `.../notas-credito/validar`), y envian el cuerpo del tipo tal cual. Devuelven
+`ValidacionResultado` (`valido`, `codEstado`, `msgError`, `errores`, `advertencias`, `correlationId`). Con un
+comprobante valido, `codEstado` y `msgError` son `null` y `errores` esta vacio; `advertencias` trae los avisos que el
+API devuelve junto al resultado (por ejemplo, que ignora la firma de un XML que la trae) y no impide emitir.
 
 ```php
 $validacion = $client->validarEn('0123456789001', $comprobante);
@@ -125,6 +172,14 @@ if (!$validacion->valido) {          // 422 con codEstado 3002: no lanza
 
 Cualquier otro error lanza la excepcion habitual (por ejemplo `EcuafactAuthException` con 403 y `codEstado` 3011).
 Como no tiene efectos, se reintenta igual que un GET.
+
+### Validar antes de cada emision (opcional)
+
+Con `validarAntesDeEmitir: true` en `EcuafactClientOptions` (o `validarAntes: true` en `RequestOptions` para una sola
+llamada), `emitir`/`emitirEn` llaman primero a `/validar`. Si `valido` es `false` o hay `errores`, lanzan
+`EcuafactValidationException` (422, `codEstado` 3002) sin enviar la emision; las `advertencias` no bloquean y quedan en
+`EmisionResultado::$advertencias`. Por defecto es `false` para no duplicar peticiones: sin la opcion se hace 1
+peticion por emision, con ella 2.
 
 ## Reintentos
 
@@ -160,6 +215,8 @@ y los estados de `retryableStatusCodes` (`408, 425, 500, 502, 503, 504`).
 | `caInfo` | `null` | Bundle de CA en PEM (solo cURL) |
 | `verifyPeer` | `true` | `false` desactiva la validacion TLS; solo pruebas locales (solo cURL) |
 | `curlOptions` | `[]` | Opciones `CURLOPT_*` extra (solo cURL) |
+| `maxResponseBytes` | 32 MiB (100 MiB en descargas) | Tope en bytes de la respuesta; `null` o `0` lo desactiva. Al superarlo lanza `EcuafactResponseTooLargeException` (`$limite`, `$bytesLeidos`) |
+| `validarAntesDeEmitir` | `false` | `true` llama a `/validar` antes de cada emision (2 peticiones); si no es valido lanza `EcuafactValidationException` sin emitir |
 | `additionalInfo` | `null` | Cabecera `X-Additional-Info` en todas las solicitudes: ASCII imprimible, sin espacios al inicio/fin, maximo 256; `null`/`''` no la envia; no aparece en `var_dump` |
 
 El transporte cURL reutiliza el mismo handle (keep-alive). Para usar Guzzle o Symfony HttpClient,
@@ -186,6 +243,7 @@ $opciones = new RequestOptions(
     correlationId: 'PED-2026-0457', // cabecera X-Correlation-Id: 1-64 de A-Z a-z 0-9 . _ -
     reintentos: true,         // false: sin reintentos en esta llamada
     additionalInfo: 'erp=MiERP/4.2; caja=3', // cabecera X-Additional-Info; reemplaza a la del cliente
+    validarAntes: true,      // solo emitir: llama a /validar antes; null usa validarAntesDeEmitir del cliente
 );
 $resultado = $client->emitirEn('0123456789001', $comprobante, 'FACTURA-2026-0001', $opciones);
 echo $resultado->correlationId; // la correlacion que devolvio el API
@@ -201,36 +259,32 @@ echo $resultado->correlationId; // la correlacion que devolvio el API
 
 ## Constructores de comprobantes
 
-Opcionales. Producen el mismo `ComprobanteRequest`; puedes seguir armandolo a mano.
+Opcionales. Solo ensamblan la solicitud de su tipo (`FacturaRequest`, `NotaCreditoRequest`...) con los valores que les das (no calculan totales ni
+impuestos, no redondean y no completan valores por defecto); puedes seguir armandolo a mano.
 
 ```php
 use Ecuafact\Sdk\Builders\ComprobanteBuilder;
-use Ecuafact\Sdk\Builders\Iva;
 use Ecuafact\Sdk\Builders\Tarifa;
 
 $builder = ComprobanteBuilder::factura('0123456789001', '002', '001')
     ->referencias('MiERP', 'FACTURA-2026-0001')
     ->fechaEmision('07/10/2026')
     ->comprador('05', '0123456789', 'CONTRIBUYENTE DE PRUEBAS')
-    ->linea('SERV-001', 'CONSULTORIA', 3, '12.50', '2.50', Iva::TARIFA_15)
-    ->linea('PRD-ICE-01', 'PRODUCTO CON ICE', 1, '100.00', 0, Iva::TARIFA_15, Tarifa::ice('3011', 10))
-    ->pago('01')            // sin total: recibe lo que falta del importeTotal
-    ->calcularTotales();    // opcional: rellena solo lo que esta vacio
+    ->moneda('DOLAR')
+    ->linea('SERV-001', 'CONSULTORIA', 3, '12.50', '2.50', Tarifa::iva('4', 15))
+    ->totalSinImpuestos('35.00')   // los importes los calculas tu
+    ->importeTotal('40.25')
+    ->pago('01', '40.25');
 
-$inconsistencias = $builder->validar(); // Inconsistencia[] {campo, mensaje, esperado, actual}; no lanza
 $resultado = $client->emitirEn('0123456789001', $builder->construir(), 'FACTURA-2026-0001');
 ```
 
 - Tipos: `factura`, `liquidacionCompra`, `notaCredito`, `notaDebito`, `guiaRemision`, `retencion`.
-- Lo que asignas nunca se sobrescribe (`importeTotal()`, `detalle(Detalle)`, `configurar(fn)`...).
-- Reglas del API: subtotal `redondear(cantidad x precio - descuento)`; IVA sobre la base sin redondear
-  mas el ICE; cabecera agrupada por `codigo` + `codigoPorcentaje` (IVA y luego ICE) sumando las lineas;
-  total = subtotal + IVA + ICE + propina.
-- Precision: `new Precision(escalaImportes: 2, escalaCantidades: 6, redondeo: ModoRedondeo::HALF_UP)`
-  como ultimo argumento de la fabrica.
-- Sin constructor: `ComprobanteBuilder::calcularTotales($request)` (devuelve una copia) y
-  `ComprobanteBuilder::validarComprobante($request)`.
-- Calculo exacto: usa `bcmath` si esta instalado y, si no, aritmetica decimal propia sobre strings.
+- Lo que asignas se envia tal cual (`importeTotal()`, `detalle(DetalleCompraVenta)`, `configurar(fn)`...) y lo que no
+  asignas no se envia: sin totales, impuestos, `moneda`, `propina`, `pagoLocExt` ni `total` de pago por defecto.
+- Los importes (`int`, `float` o texto decimal como `'10.00'`) conservan su precision sin perdida.
+- Los constructores no calculan ni validan reglas de negocio: usa `validar` o emite y lee el 422 del API, que
+  es quien calcula y decide.
 
 ## Estados tipados
 
@@ -268,7 +322,7 @@ los campos string originales no cambian.
 | Excepcion | Cuando | Que hacer |
 |---|---|---|
 | `EcuafactAuthException` | 401/403 | Revisa la API Key y el contribuyente autorizado |
-| `EcuafactValidationException` | 400/422 | Corrige los datos segun `errores` |
+| `EcuafactValidationException` | 400/413/415/422/501 | Corrige los datos segun `errores` |
 | `EcuafactNotFoundException` | 404 | Revisa la identificacion, la clave o el id |
 | `EcuafactConflictException` | 409 | Misma `Idempotency-Key` con otro contenido, o comprobante duplicado |
 | `EcuafactRateLimitException` | 429 con `codEstado` 5005 | Espera `retryAfter` segundos y repite |
@@ -277,6 +331,8 @@ los campos string originales no cambian.
 | `EcuafactConnectionException` | Sin respuesta HTTP | Repite con la misma `Idempotency-Key` |
 | `EcuafactTimeoutException` | Tiempo agotado | Consulta la operacion o repite con la misma clave |
 | `EcuafactConfigurationException` | Opcion invalida | Corrige la configuracion |
+| `EcuafactTipoComprobanteException` | El filtro `tipoDocumento` de `listarOperaciones` no es un tipo valido | Usa `01`, `03`, `04`, `05`, `06`, `07` o su nombre |
+| `EcuafactResponseTooLargeException` | Respuesta mayor que `maxResponseBytes` | Sube o desactiva el tope; no se reintenta |
 | `EcuafactWebhookException` | Firma de webhook invalida | Responde 400 y no proceses el evento |
 
 Todo error del API tiene la misma forma: `{ "estado": "rechazado", "codEstado": 3002, "msgError": "...",
@@ -335,7 +391,7 @@ switch ($evento->eventType) {
 `document.authorized` llega con `estado` `autorizado`; `document.rejected`, solo con `rechazado` y `codEstado`
 3001 (`rechazo_sri`); `document.failed`, con `rechazado` y 3002 (`comprobante_invalido`), con
 `rechazo_configuracion` o con `error`, y siempre es final. El cuerpo trae `codEstado`, `errores`, `msgError`
-(solo si hay error) y `fhAutorizacion` (si existe). `operation.requires_attention` es un aviso no final: el documento sigue `recibido`
+(solo si hay error) `fhAutorizacion` (si existe) y `ruc`. `operation.requires_attention` es un aviso no final: el documento sigue `recibido`
 y el resultado llega despues con otro evento. Un documento `cancelado` no genera evento. `$evento->cuerpo` trae
 el cuerpo completo decodificado.
 
@@ -372,3 +428,4 @@ verifica solo el estandar. Aceptan el secreto con o sin el prefijo `whsec_`; un 
 ## Licencia
 
 MIT.
+

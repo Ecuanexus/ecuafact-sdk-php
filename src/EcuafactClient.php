@@ -9,18 +9,26 @@ use Ecuafact\Sdk\Contracts\Admission;
 use Ecuafact\Sdk\Contracts\BusquedaContribuyente;
 use Ecuafact\Sdk\Contracts\ClaveAccesoDecodificada;
 use Ecuafact\Sdk\Contracts\CodEstado;
-use Ecuafact\Sdk\Contracts\ComprobanteRequest;
 use Ecuafact\Sdk\Contracts\Contexto;
 use Ecuafact\Sdk\Contracts\ContribuyenteConsulta;
 use Ecuafact\Sdk\Contracts\EstablecimientosContribuyente;
 use Ecuafact\Sdk\Contracts\Operation;
+use Ecuafact\Sdk\Contracts\PaginaComprobantes;
 use Ecuafact\Sdk\Contracts\PerfilEmisor;
 use Ecuafact\Sdk\Contracts\PerfilEmisorUpdate;
 use Ecuafact\Sdk\Contracts\QuotaBucket;
+use Ecuafact\Sdk\Contracts\SolicitudComprobante;
 use Ecuafact\Sdk\Contracts\ValidacionIdentificacion;
+use Ecuafact\Sdk\Contracts\WebhookDelivery;
+use Ecuafact\Sdk\Contracts\WebhookDeliveryAttempt;
+use Ecuafact\Sdk\Contracts\WebhookDestinoCrearRequest;
+use Ecuafact\Sdk\Contracts\WebhookDestinoEventosRequest;
+use Ecuafact\Sdk\Contracts\WebhookEndpoint;
+use Ecuafact\Sdk\Contracts\WebhookEndpointCreated;
 use Ecuafact\Sdk\Support\Hydrator;
 use Ecuafact\Sdk\Support\Serialization;
 use Ecuafact\Sdk\Transport\CurlTransport;
+use Ecuafact\Sdk\Transport\ResponseLimitAwareTransportInterface;
 use Ecuafact\Sdk\Transport\TimeoutAwareTransportInterface;
 use Ecuafact\Sdk\Transport\TimeoutOverrideTransportInterface;
 use Ecuafact\Sdk\Transport\TransportInterface;
@@ -44,6 +52,19 @@ final class EcuafactClient
     private const IDEMPOTENCY_KEY_PATTERN = '/^[A-Za-z0-9\-_.:\/]{1,128}$/D';
     private const IDEMPOTENCY_KEY_MESSAGE = 'Idempotency-Key: solo letras, digitos y - _ . : /, maximo 128 caracteres.';
     private const UUID_PATTERN = '/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/D';
+    private const TIPO_INDICAR = 'Usa el codigo (01 factura, 03 liquidacion de compra, 04 nota de credito, '
+        . '05 nota de debito, 06 guia de remision, 07 retencion) o su nombre (por ejemplo factura).';
+    private const IDENTIFICACION_PATTERN = '/^[0-9]{5,13}$/D';
+    private const IDENTIFICACION_MESSAGE = 'La identificacion del contribuyente debe tener de 5 a 13 digitos: usa el '
+        . 'valor identificacion de GET /v1/contexto, el mismo de infoTributaria.ruc.';
+    private const CODIGO_POR_NOMBRE = [
+        'factura' => '01', 'facturas' => '01',
+        'liquidacion' => '03', 'liquidacion-compra' => '03', 'liquidaciones-compra' => '03',
+        'nota-credito' => '04', 'notas-credito' => '04',
+        'nota-debito' => '05', 'notas-debito' => '05',
+        'guia' => '06', 'guia-remision' => '06', 'guias-remision' => '06',
+        'retencion' => '07', 'retenciones' => '07',
+    ];
     private const RUTAS_POR_TIPO = [
         '01' => 'facturas',
         '03' => 'liquidaciones-compra',
@@ -85,7 +106,7 @@ final class EcuafactClient
     }
 
     public function emitir(
-        ComprobanteRequest $comprobante,
+        SolicitudComprobante $comprobante,
         ?string $idempotencyKey = null,
         ?RequestOptions $opciones = null
     ): EmisionResultado {
@@ -93,8 +114,11 @@ final class EcuafactClient
     }
 
     /**
-     * Emite un comprobante (202) en la ruta de su `infoTributaria.tipoDocumento`. El tipo no viaja en el
-     * cuerpo; si falta o no es 01, 03, 04, 05, 06 o 07, lanza {@see EcuafactSdkException} sin llamar al API.
+     * Emite un comprobante (202) en la ruta de su tipo: la clase de la solicitud (`FacturaRequest`,
+     * `LiquidacionCompraRequest`, `NotaCreditoRequest`, `NotaDebitoRequest`, `GuiaRemisionRequest` o
+     * `RetencionRequest`) fija el endpoint y el cuerpo es exactamente el de ese tipo.
+     * Con `validarAntesDeEmitir` (cliente) o `validarAntes` (llamada) llama antes a `/validar`: si no es valido lanza
+     * {@see EcuafactValidationException} sin emitir y las advertencias quedan en `EmisionResultado::$advertencias`.
      * Si no pasas `$idempotencyKey`, el SDK la genera y la reutiliza en los reintentos; la devuelve en
      * `EmisionResultado::$idempotencyKey`.
      *
@@ -102,37 +126,51 @@ final class EcuafactClient
      */
     public function emitirEn(
         string $identificacion,
-        ComprobanteRequest $comprobante,
+        SolicitudComprobante $comprobante,
         ?string $idempotencyKey = null,
         ?RequestOptions $opciones = null
     ): EmisionResultado {
         $key = $idempotencyKey !== null && $idempotencyKey !== '' ? $idempotencyKey : bin2hex(random_bytes(16));
         $this->validateIdempotencyKey($key);
-        $path = 'v1/contribuyentes/' . rawurlencode($identificacion) . '/' . $this->rutaPorTipo($comprobante);
+        $path = 'v1/contribuyentes/' . $this->identificacionRuta($identificacion) . '/'
+            . $this->rutaPorTipo($comprobante);
+        $advertencias = [];
+        if ($opciones?->validarAntes ?? $this->options->validarAntesDeEmitir) {
+            $previa = $this->validarEn($identificacion, $comprobante, $opciones);
+            if (!$previa->valido || $previa->errores !== []) {
+                throw new EcuafactValidationException([
+                    'estado' => 'rechazado',
+                    'codEstado' => $previa->codEstado ?? CodEstado::COMPROBANTE_INVALIDO,
+                    'msgError' => $previa->msgError ?? 'El comprobante no cumple las validaciones.',
+                    'errores' => $previa->errores,
+                ], 422, $previa->correlationId, $key);
+            }
+            $advertencias = $previa->advertencias;
+        }
         $correlation = null;
         /** @var Admission $admission */
         $admission = $this->send(
             'POST',
             $path,
-            $this->cuerpoSinTipo($comprobante),
+            $comprobante,
             $key,
             Admission::class,
             false,
             $correlation,
             $opciones
         );
-        return new EmisionResultado($admission, $key, $correlation);
+        return new EmisionResultado($admission, $key, $correlation, $advertencias);
     }
 
-    public function validar(ComprobanteRequest $comprobante, ?RequestOptions $opciones = null): ValidacionResultado
+    public function validar(SolicitudComprobante $comprobante, ?RequestOptions $opciones = null): ValidacionResultado
     {
         return $this->validarEn($this->requireIdentificacion(), $comprobante, $opciones);
     }
 
     /**
-     * Valida un comprobante sin emitirlo (`POST` a la ruta de su `infoTributaria.tipoDocumento` + `/validar`):
+     * Valida un comprobante sin emitirlo (`POST` a la ruta de su tipo + `/validar`):
      * mismas reglas que la emision, sin `Idempotency-Key`, sin consumir cupo ni emitir. Con 200 devuelve
-     * `valido = true`; con 422 y `codEstado` 3002 (`comprobante_invalido`) devuelve `valido = false` y los
+     * `valido = true` y las `advertencias` que traiga el cuerpo; con 422 y `codEstado` 3002 (`comprobante_invalido`) devuelve `valido = false` y los
      * `errores` (no lanza). Cualquier otro error lanza como el resto de llamadas (por ejemplo 403
      * `acceso_denegado` con {@see EcuafactAuthException}). Se reintenta como un GET.
      *
@@ -140,10 +178,10 @@ final class EcuafactClient
      */
     public function validarEn(
         string $identificacion,
-        ComprobanteRequest $comprobante,
+        SolicitudComprobante $comprobante,
         ?RequestOptions $opciones = null
     ): ValidacionResultado {
-        $path = 'v1/contribuyentes/' . rawurlencode($identificacion) . '/'
+        $path = 'v1/contribuyentes/' . $this->identificacionRuta($identificacion) . '/'
             . $this->rutaPorTipo($comprobante) . '/validar';
         $headers = $this->buildJsonHeaders('application/json; charset=utf-8', null, $opciones);
         // Sin efectos: se reintenta como un GET aunque no lleve Idempotency-Key.
@@ -151,7 +189,7 @@ final class EcuafactClient
             'POST',
             $this->buildUrl($path),
             $headers,
-            Serialization::encode($this->cuerpoSinTipo($comprobante)),
+            Serialization::encode($comprobante),
             true,
             null,
             $opciones
@@ -162,13 +200,15 @@ final class EcuafactClient
         if ($response->status >= 400) {
             throw $this->buildApiException($response, null, $opciones);
         }
-        // El cuerpo del 200 no se interpreta: el estado HTTP basta.
+        $cuerpo = json_decode($response->body, true);
+        $cuerpo = is_array($cuerpo) ? $cuerpo : [];
         return new ValidacionResultado(
-            true,
+            ($cuerpo['valido'] ?? true) !== false,
             null,
             null,
-            [],
-            $response->header('X-Correlation-Id') ?? $opciones?->correlationId
+            $this->listaTextos($cuerpo['errores'] ?? null),
+            $response->header('X-Correlation-Id') ?? $opciones?->correlationId,
+            $this->listaTextos($cuerpo['advertencias'] ?? null)
         );
     }
 
@@ -309,6 +349,295 @@ final class EcuafactClient
         return $this->send('GET', 'v1/consumo', null, null, QuotaBucket::class, false, $correlation, $opciones);
     }
 
+    /**
+     * Comprueba que el servicio responde (`GET /salud`, no requiere API Key y no consume cupo). Devuelve true
+     * con una respuesta 2xx; con cualquier otro estado lanza {@see EcuafactApiException}.
+     *
+     * @throws EcuafactApiException|EcuafactSdkException
+     */
+    public function obtenerSalud(?RequestOptions $opciones = null): bool
+    {
+        $headers = ['Accept: application/json', 'User-Agent: ' . $this->options->userAgent];
+        if ($opciones?->correlationId !== null) {
+            $headers[] = 'X-Correlation-Id: ' . $opciones->correlationId;
+        }
+        $response = $this->requestWithRetry('GET', $this->buildUrl('salud'), $headers, null, true, null, $opciones);
+        if ($response->status >= 400) {
+            throw $this->buildApiException($response, null, $opciones);
+        }
+        return true;
+    }
+
+    /**
+     * Lista una pagina de los comprobantes de un contribuyente (`GET v1/operaciones`; no consume cupo).
+     * `$desde` y `$hasta` van en formato `yyyy-MM-dd`; `$tipoDocumento` acepta el codigo (`01`) o el nombre
+     * (`factura`); `$buscar` filtra por numero, clave de acceso, contraparte o referencia; `$pagina` empieza
+     * en 1 y `$tamanoPagina` va de 1 a 100. `PaginaComprobantes::$hayMas` indica si existe otra pagina.
+     *
+     * @throws EcuafactApiException|EcuafactSdkException
+     */
+    public function listarOperaciones(
+        string $identificacion,
+        ?string $desde = null,
+        ?string $hasta = null,
+        ?string $tipoDocumento = null,
+        ?string $buscar = null,
+        int $pagina = 1,
+        int $tamanoPagina = 20,
+        ?RequestOptions $opciones = null
+    ): PaginaComprobantes {
+        $parts = ['identificacion=' . rawurlencode($this->identificacionRuta($identificacion))];
+        foreach (['desde' => $desde, 'hasta' => $hasta] as $nombre => $valor) {
+            if ($valor !== null && trim($valor) !== '') {
+                $parts[] = $nombre . '=' . rawurlencode(trim($valor));
+            }
+        }
+        if ($tipoDocumento !== null && trim($tipoDocumento) !== '') {
+            $codigo = $this->codigoTipo($tipoDocumento);
+            if ($codigo === null) {
+                throw new EcuafactTipoComprobanteException('El tipo de comprobante no es valido. ' . self::TIPO_INDICAR);
+            }
+            $parts[] = 'tipoDocumento=' . $codigo;
+        }
+        if ($buscar !== null && trim($buscar) !== '') {
+            $parts[] = 'buscar=' . rawurlencode($buscar);
+        }
+        if ($pagina < 1) {
+            throw new EcuafactSdkException('pagina empieza en 1.');
+        }
+        if ($tamanoPagina < 1 || $tamanoPagina > 100) {
+            throw new EcuafactSdkException('tamanoPagina va de 1 a 100.');
+        }
+        $parts[] = 'pagina=' . $pagina;
+        $parts[] = 'tamanoPagina=' . $tamanoPagina;
+        $correlation = null;
+        /** @var PaginaComprobantes $resultado */
+        $resultado = $this->send(
+            'GET',
+            'v1/operaciones?' . implode('&', $parts),
+            null,
+            null,
+            PaginaComprobantes::class,
+            false,
+            $correlation,
+            $opciones
+        );
+        return $resultado;
+    }
+
+    /**
+     * Lista los destinos de webhooks de la integracion.
+     *
+     * @return WebhookEndpoint[]
+     * @throws EcuafactApiException|EcuafactSdkException
+     */
+    public function listarWebhookDestinos(?RequestOptions $opciones = null): array
+    {
+        $correlation = null;
+        /** @var WebhookEndpoint[] $resultado */
+        $resultado = $this->send('GET', 'v1/webhooks/destinos', null, null, WebhookEndpoint::class, true, $correlation, $opciones);
+        return $resultado;
+    }
+
+    /**
+     * Crea un destino de webhooks. La respuesta trae el secreto de firma (`secretoUnaVez`) una sola vez.
+     * No se reintenta automaticamente.
+     *
+     * @throws EcuafactApiException|EcuafactSdkException
+     */
+    public function crearWebhookDestino(
+        WebhookDestinoCrearRequest $destino,
+        ?RequestOptions $opciones = null
+    ): WebhookEndpointCreated {
+        if ($destino->url === null || trim($destino->url) === '') {
+            throw new EcuafactSdkException('La url del destino es obligatoria.');
+        }
+        if ($destino->eventos === null || $destino->eventos === []) {
+            throw new EcuafactSdkException('Indica al menos un evento.');
+        }
+        $correlation = null;
+        /** @var WebhookEndpointCreated $resultado */
+        $resultado = $this->send(
+            'POST',
+            'v1/webhooks/destinos',
+            $destino,
+            null,
+            WebhookEndpointCreated::class,
+            false,
+            $correlation,
+            $opciones
+        );
+        return $resultado;
+    }
+
+    /**
+     * Consulta un destino de webhooks. `$id` es el `publicId` del destino (UUID).
+     *
+     * @throws EcuafactApiException|EcuafactSdkException
+     */
+    public function getWebhookDestino(string $id, ?RequestOptions $opciones = null): WebhookEndpoint
+    {
+        $correlation = null;
+        /** @var WebhookEndpoint $resultado */
+        $resultado = $this->send('GET', $this->rutaWebhook($id), null, null, WebhookEndpoint::class, false, $correlation, $opciones);
+        return $resultado;
+    }
+
+    /**
+     * Reemplaza los eventos de un destino (204).
+     *
+     * @param string[] $eventos Tipos de evento, por ejemplo `document.authorized`.
+     * @throws EcuafactApiException|EcuafactSdkException
+     */
+    public function actualizarWebhookEventos(string $id, array $eventos, ?RequestOptions $opciones = null): void
+    {
+        if ($eventos === []) {
+            throw new EcuafactSdkException('Indica al menos un evento.');
+        }
+        $cuerpo = new WebhookDestinoEventosRequest();
+        $cuerpo->eventos = array_values($eventos);
+        $this->sendSinContenido('PUT', $this->rutaWebhook($id) . '/eventos', $cuerpo, $opciones);
+    }
+
+    /**
+     * Rota el secreto de firma del destino. La respuesta trae el secreto nuevo (`secretoUnaVez`) una sola vez.
+     *
+     * @throws EcuafactApiException|EcuafactSdkException
+     */
+    public function rotarWebhookSecreto(string $id, ?RequestOptions $opciones = null): WebhookEndpointCreated
+    {
+        $correlation = null;
+        /** @var WebhookEndpointCreated $resultado */
+        $resultado = $this->send(
+            'POST',
+            $this->rutaWebhook($id) . '/rotar-secreto',
+            null,
+            null,
+            WebhookEndpointCreated::class,
+            false,
+            $correlation,
+            $opciones
+        );
+        return $resultado;
+    }
+
+    /**
+     * Envia un evento de prueba al destino (202).
+     *
+     * @throws EcuafactApiException|EcuafactSdkException
+     */
+    public function probarWebhookDestino(string $id, ?RequestOptions $opciones = null): void
+    {
+        $this->sendSinContenido('POST', $this->rutaWebhook($id) . '/probar', null, $opciones);
+    }
+
+    /**
+     * Pausa las entregas del destino (204).
+     *
+     * @throws EcuafactApiException|EcuafactSdkException
+     */
+    public function pausarWebhookDestino(string $id, ?RequestOptions $opciones = null): void
+    {
+        $this->sendSinContenido('POST', $this->rutaWebhook($id) . '/pausar', null, $opciones);
+    }
+
+    /**
+     * Reanuda las entregas de un destino pausado (204).
+     *
+     * @throws EcuafactApiException|EcuafactSdkException
+     */
+    public function reanudarWebhookDestino(string $id, ?RequestOptions $opciones = null): void
+    {
+        $this->sendSinContenido('POST', $this->rutaWebhook($id) . '/reanudar', null, $opciones);
+    }
+
+    /**
+     * Deshabilita el destino (204).
+     *
+     * @throws EcuafactApiException|EcuafactSdkException
+     */
+    public function deshabilitarWebhookDestino(string $id, ?RequestOptions $opciones = null): void
+    {
+        $this->sendSinContenido('POST', $this->rutaWebhook($id) . '/deshabilitar', null, $opciones);
+    }
+
+    /**
+     * Lista las entregas de un destino.
+     *
+     * @return WebhookDelivery[]
+     * @throws EcuafactApiException|EcuafactSdkException
+     */
+    public function listarWebhookEntregas(string $id, ?RequestOptions $opciones = null): array
+    {
+        $correlation = null;
+        /** @var WebhookDelivery[] $resultado */
+        $resultado = $this->send(
+            'GET',
+            $this->rutaWebhook($id) . '/entregas',
+            null,
+            null,
+            WebhookDelivery::class,
+            true,
+            $correlation,
+            $opciones
+        );
+        return $resultado;
+    }
+
+    /**
+     * Lista los intentos de una entrega. `$entregaId` es el `publicId` de la entrega.
+     *
+     * @return WebhookDeliveryAttempt[]
+     * @throws EcuafactApiException|EcuafactSdkException
+     */
+    public function listarWebhookIntentos(string $id, string $entregaId, ?RequestOptions $opciones = null): array
+    {
+        $ruta = $this->rutaWebhook($id);
+        $this->validateUuid($entregaId, 'entregaId');
+        $correlation = null;
+        /** @var WebhookDeliveryAttempt[] $resultado */
+        $resultado = $this->send(
+            'GET',
+            $ruta . '/entregas/' . $entregaId . '/intentos',
+            null,
+            null,
+            WebhookDeliveryAttempt::class,
+            true,
+            $correlation,
+            $opciones
+        );
+        return $resultado;
+    }
+
+    /**
+     * Reencola una entrega fallida o rechazada (202). `$eventoId` es el `eventId` de la entrega.
+     *
+     * @throws EcuafactApiException|EcuafactSdkException
+     */
+    public function reintentarWebhookEntrega(string $id, string $eventoId, ?RequestOptions $opciones = null): void
+    {
+        $ruta = $this->rutaWebhook($id);
+        $this->validateUuid($eventoId, 'eventoId');
+        $this->sendSinContenido('POST', $ruta . '/entregas/' . $eventoId . '/reintentar', null, $opciones);
+    }
+
+    private function rutaWebhook(string $id): string
+    {
+        $this->validateUuid($id, 'id');
+        return 'v1/webhooks/destinos/' . $id;
+    }
+
+    /** Llamada cuya respuesta exitosa no trae cuerpo (202 o 204). No se reintenta. */
+    private function sendSinContenido(string $method, string $path, ?object $body, ?RequestOptions $opciones): void
+    {
+        $json = $body !== null ? Serialization::encode($body) : null;
+        $headers = $this->buildJsonHeaders($json !== null ? 'application/json; charset=utf-8' : null, null, $opciones);
+        $response = $this->requestWithRetry($method, $this->buildUrl($path), $headers, $json, false, null, $opciones);
+        if ($response->status >= 400) {
+            throw $this->buildApiException($response, null, $opciones);
+        }
+    }
+
     public function consultarContribuyente(
         string $identificacion,
         bool $fusionar = true,
@@ -318,7 +647,7 @@ final class EcuafactClient
         if (trim($identificacion) === '') {
             throw new EcuafactSdkException('La identificacion es obligatoria.');
         }
-        $path = 'v1/consultas/contribuyentes/' . rawurlencode($identificacion)
+        $path = 'v1/consultas/contribuyentes/' . $this->segmento($identificacion)
             . '?fusionar=' . ($fusionar ? 'true' : 'false');
         if ($fuente !== null && trim($fuente) !== '') {
             $path .= '&fuente=' . rawurlencode($fuente);
@@ -365,7 +694,7 @@ final class EcuafactClient
         if (trim($ruc) === '') {
             throw new EcuafactSdkException('El RUC es obligatorio.');
         }
-        $path = 'v1/consultas/establecimientos/' . rawurlencode($ruc);
+        $path = 'v1/consultas/establecimientos/' . $this->segmento($ruc);
         if ($filtro !== null && trim($filtro) !== '') {
             $path .= '?filtro=' . rawurlencode($filtro);
         }
@@ -380,7 +709,7 @@ final class EcuafactClient
         if (trim($numero) === '') {
             throw new EcuafactSdkException('El numero a validar es obligatorio.');
         }
-        $path = 'v1/consultas/identificacion/validar/' . rawurlencode($numero);
+        $path = 'v1/consultas/identificacion/validar/' . $this->segmento($numero);
         /** @var ValidacionIdentificacion $resultado */
         $correlation = null;
         $resultado = $this->send('GET', $path, null, null, ValidacionIdentificacion::class, false, $correlation, $opciones);
@@ -392,7 +721,7 @@ final class EcuafactClient
         if (trim($claveAcceso) === '') {
             throw new EcuafactSdkException('La clave de acceso es obligatoria.');
         }
-        $path = 'v1/consultas/comprobantes/decodificar/' . rawurlencode($claveAcceso);
+        $path = 'v1/consultas/comprobantes/decodificar/' . $this->segmento($claveAcceso);
         /** @var ClaveAccesoDecodificada $resultado */
         $correlation = null;
         $resultado = $this->send('GET', $path, null, null, ClaveAccesoDecodificada::class, false, $correlation, $opciones);
@@ -401,7 +730,7 @@ final class EcuafactClient
 
     private function rutaPerfil(string $identificacion): string
     {
-        return 'v1/contribuyentes/' . rawurlencode($identificacion) . '/perfil';
+        return 'v1/contribuyentes/' . $this->identificacionRuta($identificacion) . '/perfil';
     }
 
     private function descargarArchivo(
@@ -410,8 +739,8 @@ final class EcuafactClient
         string $formato,
         ?RequestOptions $opciones
     ): ArchivoComprobante {
-        $path = 'v1/contribuyentes/' . rawurlencode($identificacion)
-            . '/comprobantes/' . rawurlencode($claveAcceso) . '/' . $formato;
+        $path = 'v1/contribuyentes/' . $this->identificacionRuta($identificacion)
+            . '/comprobantes/' . $this->segmento($claveAcceso) . '/' . $formato;
         $url = $this->buildUrl($path);
         $headers = [
             'X-Api-Key: ' . $this->options->apiKey,
@@ -421,7 +750,7 @@ final class EcuafactClient
             $headers[] = 'X-Correlation-Id: ' . $opciones->correlationId;
         }
         $this->agregarAdditionalInfo($headers, $opciones);
-        $response = $this->requestWithRetry('GET', $url, $headers, null, true, null, $opciones);
+        $response = $this->requestWithRetry('GET', $url, $headers, null, true, null, $opciones, true);
         if ($response->status >= 400) {
             throw $this->buildApiException($response, null, $opciones);
         }
@@ -503,27 +832,35 @@ final class EcuafactClient
         return $headers;
     }
 
+    /** @return string[] */
+    private function listaTextos(mixed $valor): array
+    {
+        $textos = [];
+        if (is_array($valor)) {
+            foreach ($valor as $item) {
+                if (is_scalar($item)) {
+                    $textos[] = (string) $item;
+                }
+            }
+        }
+        return $textos;
+    }
+
     private function parseValidacionInvalida(TransportResponse $response, ?RequestOptions $opciones): ValidacionResultado
     {
         $data = json_decode($response->body, true);
         if (!is_array($data)) {
             throw new EcuafactSdkException('Respuesta del API no reconocida.');
         }
-        $errores = [];
-        if (isset($data['errores']) && is_array($data['errores'])) {
-            foreach ($data['errores'] as $error) {
-                if (is_scalar($error)) {
-                    $errores[] = (string) $error;
-                }
-            }
-        }
+        $errores = $this->listaTextos($data['errores'] ?? null);
         $msgError = isset($data['msgError']) && is_scalar($data['msgError']) ? (string) $data['msgError'] : null;
         return new ValidacionResultado(
             false,
             EcuafactApiException::codEstadoDe($data),
             $msgError,
             $errores,
-            $response->header('X-Correlation-Id') ?? $opciones?->correlationId
+            $response->header('X-Correlation-Id') ?? $opciones?->correlationId,
+            $this->listaTextos($data['advertencias'] ?? null)
         );
     }
 
@@ -548,9 +885,11 @@ final class EcuafactClient
         ?string $payload,
         bool $retryable,
         ?string $idempotencyKey,
-        ?RequestOptions $opciones = null
+        ?RequestOptions $opciones = null,
+        bool $descarga = false
     ): TransportResponse {
         $options = $this->options;
+        $maxBytes = $descarga ? $options->maxDownloadBytes : $options->maxResponseBytes;
         $totalTimeout = $opciones?->totalTimeout ?? $options->totalTimeoutSeconds;
         $deadline = $totalTimeout !== null ? self::now() + $totalTimeout : null;
         $reintentar = $options->retryTransientFailures && $retryable && ($opciones === null || $opciones->reintentos);
@@ -569,7 +908,15 @@ final class EcuafactClient
             }
             $failure = null;
             try {
+                if ($this->transport instanceof ResponseLimitAwareTransportInterface) {
+                    $this->transport->limitarRespuesta($maxBytes);
+                }
                 $response = $this->transportRequest($method, $url, $headers, $payload, $remaining, $opciones?->timeout);
+                if ($maxBytes !== null && strlen($response->body) > $maxBytes) {
+                    throw new EcuafactResponseTooLargeException($maxBytes, strlen($response->body));
+                }
+            } catch (EcuafactResponseTooLargeException $exception) {
+                throw $exception->conContexto($idempotencyKey, $correlacion);
             } catch (EcuafactConfigurationException | EcuafactApiException $exception) {
                 throw $exception;
             } catch (EcuafactConnectionException | EcuafactTimeoutException $exception) {
@@ -695,31 +1042,39 @@ final class EcuafactClient
         );
     }
 
-    /** Segmento publico de la ruta de emision segun `infoTributaria.tipoDocumento`. */
-    private function rutaPorTipo(ComprobanteRequest $comprobante): string
+    /** Segmento de la ruta de emision: sale del tipo de la solicitud. */
+    private function rutaPorTipo(SolicitudComprobante $comprobante): string
     {
-        $tipo = $comprobante->infoTributaria?->tipoDocumento;
-        if ($tipo === null || $tipo === '') {
-            throw new EcuafactSdkException('infoTributaria.tipoDocumento es obligatorio.');
-        }
-        if (!isset(self::RUTAS_POR_TIPO[$tipo])) {
-            throw new EcuafactSdkException('infoTributaria.tipoDocumento debe ser 01, 03, 04, 05, 06 o 07.');
-        }
-        return self::RUTAS_POR_TIPO[$tipo];
+        return self::RUTAS_POR_TIPO[$comprobante->tipoComprobante()->value];
     }
 
-    /**
-     * Copia del comprobante sin `infoTributaria.tipoDocumento`: el tipo viaja en la ruta.
-     * No modifica el objeto del usuario.
-     */
-    private function cuerpoSinTipo(ComprobanteRequest $comprobante): ComprobanteRequest
+    private function codigoTipo(string $valor): ?string
     {
-        $copia = clone $comprobante;
-        if ($copia->infoTributaria !== null) {
-            $copia->infoTributaria = clone $copia->infoTributaria;
-            $copia->infoTributaria->tipoDocumento = null;
+        $texto = strtolower(trim($valor));
+        $texto = strtr($texto, ['ó' => 'o', 'á' => 'a', 'é' => 'e', 'í' => 'i', 'ú' => 'u']);
+        $texto = preg_replace('/[_\s]+/', '-', $texto) ?? $texto;
+        if (isset(self::RUTAS_POR_TIPO[$texto])) {
+            return $texto;
         }
-        return $copia;
+        return self::CODIGO_POR_NOMBRE[$texto] ?? null;
+    }
+
+    private function identificacionRuta(string $identificacion): string
+    {
+        if (preg_match(self::IDENTIFICACION_PATTERN, $identificacion) !== 1) {
+            throw new EcuafactSdkException(self::IDENTIFICACION_MESSAGE);
+        }
+        return $identificacion;
+    }
+
+    /** Codifica un segmento de ruta. Rechaza vacios y los segmentos `.` y `..`, que el cliente HTTP colapsaria. */
+    private function segmento(string $valor): string
+    {
+        $recortado = trim($valor);
+        if ($recortado === '' || $recortado === '.' || $recortado === '..') {
+            throw new EcuafactSdkException("El valor de la ruta no puede estar vacio ni ser '.' o '..'.");
+        }
+        return rawurlencode($valor);
     }
 
     private function requireIdentificacion(): string
@@ -747,11 +1102,11 @@ final class EcuafactClient
         }
     }
 
-    private function validateUuid(string $idOperacion): void
+    private function validateUuid(string $valor, string $nombre = 'idOperacion'): void
     {
-        if (preg_match(self::UUID_PATTERN, $idOperacion) !== 1) {
+        if (preg_match(self::UUID_PATTERN, $valor) !== 1) {
             throw new EcuafactSdkException(
-                'idOperacion debe ser un UUID (por ejemplo 3f2b8c1e-7a4d-4e2b-9c11-5d6f7a8b9c0d).'
+                $nombre . ' debe ser un UUID (por ejemplo 3f2b8c1e-7a4d-4e2b-9c11-5d6f7a8b9c0d).'
             );
         }
     }

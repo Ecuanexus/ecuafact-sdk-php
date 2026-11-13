@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ecuafact\Sdk\Transport;
 
 use Ecuafact\Sdk\EcuafactConnectionException;
+use Ecuafact\Sdk\EcuafactResponseTooLargeException;
 use Ecuafact\Sdk\EcuafactTimeoutException;
 
 /**
@@ -25,8 +26,15 @@ use Ecuafact\Sdk\EcuafactTimeoutException;
  * $client = new EcuafactClient(new EcuafactClientOptions(transport: $transport));
  * ```
  */
-final class Psr18Transport implements TransportInterface
+final class Psr18Transport implements TransportInterface, ResponseLimitAwareTransportInterface
 {
+    private ?int $maxBytes = null;
+
+    public function limitarRespuesta(?int $maxBytes): void
+    {
+        $this->maxBytes = $maxBytes;
+    }
+
     /** CURLE_OPERATION_TIMEDOUT; se define aqui para no depender de ext-curl. */
     private const CURLE_OPERATION_TIMEDOUT = 28;
     private const SYMFONY_TIMEOUT = 'Symfony\Contracts\HttpClient\Exception\TimeoutExceptionInterface';
@@ -54,7 +62,9 @@ final class Psr18Transport implements TransportInterface
         }
         try {
             $response = $this->client->sendRequest($request);
-            $content = (string) $response->getBody();
+            $content = $this->leerCuerpo($response->getBody());
+        } catch (EcuafactResponseTooLargeException $exception) {
+            throw $exception;
         } catch (\Throwable $exception) {
             if (self::esTimeout($exception)) {
                 throw new EcuafactTimeoutException('Se agoto el tiempo de espera de la solicitud.', null, null, $exception);
@@ -66,6 +76,35 @@ final class Psr18Transport implements TransportInterface
             $responseHeaders[(string) $name] = is_array($values) ? implode(', ', $values) : (string) $values;
         }
         return new TransportResponse($response->getStatusCode(), $content, $responseHeaders);
+    }
+
+    private function leerCuerpo(mixed $stream): string
+    {
+        $tope = $this->maxBytes;
+        if ($tope === null || !($stream instanceof \Psr\Http\Message\StreamInterface)) {
+            $todo = (string) $stream;
+            if ($tope !== null && strlen($todo) > $tope) {
+                throw new EcuafactResponseTooLargeException($tope, strlen($todo));
+            }
+            return $todo;
+        }
+        $contenido = '';
+        $leidos = 0;
+        if ($stream->isSeekable()) {
+            $stream->rewind();
+        }
+        while (!$stream->eof()) {
+            $trozo = $stream->read(8192);
+            if ($trozo === '') {
+                break;
+            }
+            $leidos += strlen($trozo);
+            if ($leidos > $tope) {
+                throw new EcuafactResponseTooLargeException($tope, $leidos);
+            }
+            $contenido .= $trozo;
+        }
+        return $contenido;
     }
 
     /**

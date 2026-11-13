@@ -20,6 +20,9 @@ namespace Ecuafact\Sdk;
  * - `additionalInfo`: valor de la cabecera `X-Additional-Info` solo en esta llamada. Reemplaza al
  *   `additionalInfo` del cliente. Misma validacion que en {@see EcuafactClientOptions}.
  *
+ * - `validarAntes`: `true` o `false` reemplaza a `validarAntesDeEmitir` del cliente en esta llamada de `emitir`;
+ *   `null` usa el del cliente.
+ *
  * PHP no tiene cancelacion cooperativa: para acotar una llamada usa `timeout` o `totalTimeout`.
  *
  * Un valor invalido lanza {@see EcuafactConfigurationException}.
@@ -37,6 +40,7 @@ final class RequestOptions
         public readonly ?string $correlationId = null,
         public readonly bool $reintentos = true,
         ?string $additionalInfo = null,
+        public readonly ?bool $validarAntes = null,
     ) {
         // Cadena vacia: no se envia la cabecera en esta llamada (null usa la del cliente).
         $this->additionalInfo = $additionalInfo === '' ? '' : EcuafactClientOptions::validarAdditionalInfo($additionalInfo);

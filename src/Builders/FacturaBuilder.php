@@ -6,18 +6,21 @@ namespace Ecuafact\Sdk\Builders;
 
 use Ecuafact\Sdk\Builders\Concerns\ConComprador;
 use Ecuafact\Sdk\Builders\Concerns\ConPagos;
-use Ecuafact\Sdk\Contracts\Detalle;
+use Ecuafact\Sdk\Contracts\DetalleCompraVenta;
+use Ecuafact\Sdk\Contracts\FacturaRequest;
+use Ecuafact\Sdk\Contracts\InfoFactura;
 
-/** Factura (tipoDocumento 01). Crealo con `ComprobanteBuilder::factura()`. `moneda` empieza en `DOLAR`. */
+/** Factura (`FacturaRequest`, tipo 01). Crealo con `ComprobanteBuilder::factura()`. */
 final class FacturaBuilder extends AbstractLineasBuilder
 {
     use ConComprador;
     use ConPagos;
 
-    public function __construct(string $ruc, string $estab, string $ptoEmi, ?Precision $precision = null)
+    public function __construct(string $ruc, string $estab, string $ptoEmi)
     {
-        parent::__construct('01', $ruc, $estab, $ptoEmi, $precision ?? new Precision());
-        $this->comprobante->info->moneda = 'DOLAR';
+        $solicitud = new FacturaRequest();
+        $solicitud->info = new InfoFactura();
+        parent::__construct($solicitud, $ruc, $estab, $ptoEmi);
     }
 
     public function propina(int|float|string $propina): static
@@ -45,14 +48,25 @@ final class FacturaBuilder extends AbstractLineasBuilder
         return $this;
     }
 
-    protected function tipoDocumento(): string
+    /** Agrega una linea armada por ti; se envia tal cual. */
+    public function detalle(DetalleCompraVenta $detalle): static
     {
-        return '01';
+        $this->comprobante->detalles[] = $detalle;
+        return $this;
     }
 
-    protected function asignarCodigos(Detalle $detalle, string $codigo, ?string $codigoAuxiliar): void
+    public function construir(): FacturaRequest
     {
+        /** @var FacturaRequest $solicitud */
+        $solicitud = parent::construir();
+        return $solicitud;
+    }
+
+    protected function nuevoDetalle(string $codigo, ?string $codigoAuxiliar): DetalleCompraVenta
+    {
+        $detalle = new DetalleCompraVenta();
         $detalle->codigoPrincipal = $codigo;
         $detalle->codigoAuxiliar = $codigoAuxiliar;
+        return $detalle;
     }
 }

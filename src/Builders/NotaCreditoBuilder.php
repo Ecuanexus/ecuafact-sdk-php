@@ -6,10 +6,12 @@ namespace Ecuafact\Sdk\Builders;
 
 use Ecuafact\Sdk\Builders\Concerns\ConComprador;
 use Ecuafact\Sdk\Builders\Concerns\ConDocumentoModificado;
-use Ecuafact\Sdk\Contracts\Detalle;
+use Ecuafact\Sdk\Contracts\DetalleNotaCredito;
+use Ecuafact\Sdk\Contracts\InfoNotaCredito;
+use Ecuafact\Sdk\Contracts\NotaCreditoRequest;
 
 /**
- * Nota de credito (tipoDocumento 04). Crealo con `ComprobanteBuilder::notaCredito()`. En `linea()`,
+ * Nota de credito (`NotaCreditoRequest`, tipo 04). Crealo con `ComprobanteBuilder::notaCredito()`. En `linea()`,
  * `codigo` va a `codigoInterno` y `codigoAuxiliar` a `codigoAdicional`. El total es `valorModificacion`.
  */
 final class NotaCreditoBuilder extends AbstractLineasBuilder
@@ -17,10 +19,11 @@ final class NotaCreditoBuilder extends AbstractLineasBuilder
     use ConComprador;
     use ConDocumentoModificado;
 
-    public function __construct(string $ruc, string $estab, string $ptoEmi, ?Precision $precision = null)
+    public function __construct(string $ruc, string $estab, string $ptoEmi)
     {
-        parent::__construct('04', $ruc, $estab, $ptoEmi, $precision ?? new Precision());
-        $this->comprobante->info->moneda = 'DOLAR';
+        $solicitud = new NotaCreditoRequest();
+        $solicitud->info = new InfoNotaCredito();
+        parent::__construct($solicitud, $ruc, $estab, $ptoEmi);
     }
 
     /** Razon de la nota (`DEVOLUCION`, `DESCUENTO POR PRONTO PAGO`...). */
@@ -43,14 +46,25 @@ final class NotaCreditoBuilder extends AbstractLineasBuilder
         return $this;
     }
 
-    protected function tipoDocumento(): string
+    /** Agrega una linea armada por ti; se envia tal cual. */
+    public function detalle(DetalleNotaCredito $detalle): static
     {
-        return '04';
+        $this->comprobante->detalles[] = $detalle;
+        return $this;
     }
 
-    protected function asignarCodigos(Detalle $detalle, string $codigo, ?string $codigoAuxiliar): void
+    public function construir(): NotaCreditoRequest
     {
+        /** @var NotaCreditoRequest $solicitud */
+        $solicitud = parent::construir();
+        return $solicitud;
+    }
+
+    protected function nuevoDetalle(string $codigo, ?string $codigoAuxiliar): DetalleNotaCredito
+    {
+        $detalle = new DetalleNotaCredito();
         $detalle->codigoInterno = $codigo;
         $detalle->codigoAdicional = $codigoAuxiliar;
+        return $detalle;
     }
 }

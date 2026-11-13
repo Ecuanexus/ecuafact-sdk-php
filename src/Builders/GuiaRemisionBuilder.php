@@ -5,17 +5,20 @@ declare(strict_types=1);
 namespace Ecuafact\Sdk\Builders;
 
 use Ecuafact\Sdk\Contracts\Destinatario;
-use Ecuafact\Sdk\Contracts\Detalle;
+use Ecuafact\Sdk\Contracts\DetalleGuia;
+use Ecuafact\Sdk\Contracts\GuiaRemisionRequest;
+use Ecuafact\Sdk\Contracts\InfoGuiaRemision;
 
 /**
- * Guia de remision (tipoDocumento 06). Crealo con `ComprobanteBuilder::guiaRemision()`. No lleva importes:
- * `calcularTotales()` no cambia nada. Lleva exactamente un destinatario.
+ * Guia de remision (`GuiaRemisionRequest`, tipo 06). Crealo con `ComprobanteBuilder::guiaRemision()`. No lleva importes. Lleva exactamente un destinatario.
  */
 final class GuiaRemisionBuilder extends AbstractComprobanteBuilder
 {
-    public function __construct(string $ruc, string $estab, string $ptoEmi, ?Precision $precision = null)
+    public function __construct(string $ruc, string $estab, string $ptoEmi)
     {
-        parent::__construct('06', $ruc, $estab, $ptoEmi, $precision ?? new Precision());
+        $solicitud = new GuiaRemisionRequest();
+        $solicitud->info = new InfoGuiaRemision();
+        parent::__construct($solicitud, $ruc, $estab, $ptoEmi);
     }
 
     /** `identificacion` (rucTransportista) sigue al tipo: con 04, 13 digitos; con 05, 10 digitos. */
@@ -79,7 +82,7 @@ final class GuiaRemisionBuilder extends AbstractComprobanteBuilder
         if (!isset($this->comprobante->destinatarios[0])) {
             $this->comprobante->destinatarios = [new Destinatario()];
         }
-        $detalle = new Detalle();
+        $detalle = new DetalleGuia();
         $detalle->codigoInterno = $codigoInterno;
         $detalle->codigoAdicional = $codigoAdicional;
         $detalle->descripcion = $descripcion;
@@ -88,8 +91,10 @@ final class GuiaRemisionBuilder extends AbstractComprobanteBuilder
         return $this;
     }
 
-    protected function tipoDocumento(): string
+    public function construir(): GuiaRemisionRequest
     {
-        return '06';
+        /** @var GuiaRemisionRequest $solicitud */
+        $solicitud = parent::construir();
+        return $solicitud;
     }
 }

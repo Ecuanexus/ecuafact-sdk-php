@@ -37,28 +37,4 @@ final class Tarifa
     {
         return new self('3', $codigoPorcentaje, $tarifa);
     }
-
-    /** IVA 15 % (`codigoPorcentaje` `4`). */
-    public static function iva15(): self
-    {
-        return self::iva('4', 15);
-    }
-
-    /** IVA 0 % (`codigoPorcentaje` `0`). */
-    public static function iva0(): self
-    {
-        return self::iva('0', 0);
-    }
-
-    /** No objeto de IVA (`codigoPorcentaje` `6`). */
-    public static function ivaNoObjeto(): self
-    {
-        return self::iva('6', 0);
-    }
-
-    /** Exento de IVA (`codigoPorcentaje` `7`). */
-    public static function ivaExento(): self
-    {
-        return self::iva('7', 0);
-    }
 }

@@ -8,10 +8,12 @@ use Ecuafact\Sdk\Builders\Concerns\ConComprador;
 use Ecuafact\Sdk\Builders\Concerns\ConDocumentoModificado;
 use Ecuafact\Sdk\Builders\Concerns\ConPagos;
 use Ecuafact\Sdk\Contracts\Impuesto;
+use Ecuafact\Sdk\Contracts\InfoNotaDebito;
 use Ecuafact\Sdk\Contracts\Motivo;
+use Ecuafact\Sdk\Contracts\NotaDebitoRequest;
 
 /**
- * Nota de debito (tipoDocumento 05). Crealo con `ComprobanteBuilder::notaDebito()`. Lleva `motivos` con su
+ * Nota de debito (`NotaDebitoRequest`, tipo 05). Crealo con `ComprobanteBuilder::notaDebito()`. Lleva `motivos` con su
  * valor sin IVA y un unico IVA en `info.impuestos`; el total es `valorTotal`.
  */
 final class NotaDebitoBuilder extends AbstractComprobanteBuilder
@@ -20,9 +22,11 @@ final class NotaDebitoBuilder extends AbstractComprobanteBuilder
     use ConDocumentoModificado;
     use ConPagos;
 
-    public function __construct(string $ruc, string $estab, string $ptoEmi, ?Precision $precision = null)
+    public function __construct(string $ruc, string $estab, string $ptoEmi)
     {
-        parent::__construct('05', $ruc, $estab, $ptoEmi, $precision ?? new Precision());
+        $solicitud = new NotaDebitoRequest();
+        $solicitud->info = new InfoNotaDebito();
+        parent::__construct($solicitud, $ruc, $estab, $ptoEmi);
     }
 
     public function fechaEmision(string|\DateTimeInterface $fecha): static
@@ -41,10 +45,9 @@ final class NotaDebitoBuilder extends AbstractComprobanteBuilder
         return $this;
     }
 
-    /** IVA de la nota (uno solo). Con `calcularTotales()` se rellenan su base y su valor. */
-    public function iva(Tarifa|Iva $iva): static
+    /** IVA de la nota (uno solo). Su base y su valor los asignas con `configurar()`. */
+    public function iva(Tarifa $iva): static
     {
-        $iva = $iva instanceof Iva ? $iva->tarifa() : $iva;
         $impuesto = new Impuesto();
         $impuesto->codigo = $iva->codigo;
         $impuesto->codigoPorcentaje = $iva->codigoPorcentaje;
@@ -71,8 +74,10 @@ final class NotaDebitoBuilder extends AbstractComprobanteBuilder
         return $this;
     }
 
-    protected function tipoDocumento(): string
+    public function construir(): NotaDebitoRequest
     {
-        return '05';
+        /** @var NotaDebitoRequest $solicitud */
+        $solicitud = parent::construir();
+        return $solicitud;
     }
 }

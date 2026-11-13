@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace Ecuafact\Sdk\Builders;
 
 use Ecuafact\Sdk\Contracts\CampoAdicional;
-use Ecuafact\Sdk\Contracts\Detalle;
+use Ecuafact\Sdk\Contracts\DetalleCompraVenta;
+use Ecuafact\Sdk\Contracts\DetalleNotaCredito;
 use Ecuafact\Sdk\Contracts\Impuesto;
 
 /**
  * Base de los comprobantes con lineas e impuestos: factura (01), liquidacion de compra (03) y
- * nota de credito (04).
+ * nota de credito (04). Cada uno agrega `detalle()` con su propia clase de linea (`DetalleCompraVenta` o
+ * `DetalleNotaCredito`).
  */
 abstract class AbstractLineasBuilder extends AbstractComprobanteBuilder
 {
@@ -23,8 +25,9 @@ abstract class AbstractLineasBuilder extends AbstractComprobanteBuilder
 
     /**
      * Agrega una linea. `descuento` es un importe en dolares (no porcentaje). Los importes aceptan
-     * int, float o string decimal (`'12.50'`, la forma exacta). Con `calcularTotales()` se rellenan
-     * `precioTotalSinImpuesto`, la base y el valor de cada impuesto. `iva`: `Iva::TARIFA_15` o una `Tarifa`.
+     * int, float o string decimal (`'12.50'`, la forma exacta). El SDK no calcula nada: asigna
+     * `precioTotalSinImpuesto` y los demas importes con `detalle()` o `configurar()`. `iva`: la `Tarifa`
+     * (`Tarifa::iva('4', 15)`) con el `codigoPorcentaje` y la `tarifa` que defines.
      *
      * @param array<string, string>|null $detallesAdicionales Hasta 3 pares nombre => valor.
      */
@@ -34,13 +37,12 @@ abstract class AbstractLineasBuilder extends AbstractComprobanteBuilder
         int|float|string $cantidad,
         int|float|string $precioUnitario,
         int|float|string $descuento,
-        Tarifa|Iva $iva,
+        Tarifa $iva,
         ?Tarifa $ice = null,
         ?string $codigoAuxiliar = null,
         ?array $detallesAdicionales = null,
     ): static {
-        $detalle = new Detalle();
-        $this->asignarCodigos($detalle, $codigo, $codigoAuxiliar);
+        $detalle = $this->nuevoDetalle($codigo, $codigoAuxiliar);
         $detalle->descripcion = $descripcion;
         $detalle->cantidad = self::importe($cantidad, 'cantidad');
         $detalle->precioUnitario = self::importe($precioUnitario, 'precioUnitario');
@@ -49,7 +51,7 @@ abstract class AbstractLineasBuilder extends AbstractComprobanteBuilder
         if ($ice !== null) {
             $detalle->impuestos[] = self::impuesto($ice);
         }
-        $detalle->impuestos[] = self::impuesto($iva instanceof Iva ? $iva->tarifa() : $iva);
+        $detalle->impuestos[] = self::impuesto($iva);
         if ($detallesAdicionales !== null) {
             $detalle->detallesAdicionales = [];
             foreach ($detallesAdicionales as $nombre => $valor) {
@@ -59,13 +61,6 @@ abstract class AbstractLineasBuilder extends AbstractComprobanteBuilder
                 $detalle->detallesAdicionales[] = $campo;
             }
         }
-        $this->comprobante->detalles[] = $detalle;
-        return $this;
-    }
-
-    /** Agrega una linea armada por ti; sus valores asignados se respetan. */
-    public function detalle(Detalle $detalle): static
-    {
         $this->comprobante->detalles[] = $detalle;
         return $this;
     }
@@ -82,7 +77,8 @@ abstract class AbstractLineasBuilder extends AbstractComprobanteBuilder
         return $this;
     }
 
-    abstract protected function asignarCodigos(Detalle $detalle, string $codigo, ?string $codigoAuxiliar): void;
+    /** Crea la linea del tipo con su codigo (y codigo auxiliar o adicional) asignado. */
+    abstract protected function nuevoDetalle(string $codigo, ?string $codigoAuxiliar): DetalleCompraVenta|DetalleNotaCredito;
 
     private static function impuesto(Tarifa $tarifa): Impuesto
     {

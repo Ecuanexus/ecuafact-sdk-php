@@ -12,7 +12,7 @@ use Ecuafact\Sdk\Contracts\TipoEventoWebhook;
  *
  * Campos del cuerpo: `eventType`, `resourceId`, `occurredAtUtc` y, segun el evento, `idOperacion`,
  * `estado`, `tipoDocumento`, `claveAcceso`, `codEstado` (numerico, mismo catalogo que la operacion),
- * `msgError` (se omite si no hay error), `errores` (detalle especifico), `fhAutorizacion` (si existe) y
+ * `ruc` (RUC del documento, o al que se limita el destino en el evento de prueba), `msgError` (se omite si no hay error), `errores` (detalle especifico), `fhAutorizacion` (si existe) y
  * `probe` (`"true"` en el evento de prueba del portal).
  *
  * `document.authorized` llega con `estado` `autorizado`; `document.rejected`, solo con `rechazado` y
@@ -41,6 +41,7 @@ final class WebhookEvent
         public readonly array $cuerpo = [],
         public readonly array $errores = [],
         public readonly ?string $fhAutorizacion = null,
+        public readonly ?string $ruc = null,
     ) {
     }
 
@@ -131,6 +132,7 @@ final class WebhookEvent
             $data,
             self::lista($data['errores'] ?? null),
             self::text($data['fhAutorizacion'] ?? null),
+            self::text($data['ruc'] ?? null),
         );
     }
 

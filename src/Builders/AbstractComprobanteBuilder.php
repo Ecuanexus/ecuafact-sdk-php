@@ -5,51 +5,39 @@ declare(strict_types=1);
 namespace Ecuafact\Sdk\Builders;
 
 use Ecuafact\Sdk\Contracts\CampoAdicional;
-use Ecuafact\Sdk\Contracts\ComprobanteRequest;
-use Ecuafact\Sdk\Contracts\InfoDocumento;
 use Ecuafact\Sdk\Contracts\InfoTributaria;
 use Ecuafact\Sdk\Contracts\Pago;
+use Ecuafact\Sdk\Contracts\SolicitudComprobante;
 use Ecuafact\Sdk\EcuafactSdkException;
 use Ecuafact\Sdk\Support\DecimalMath;
 
 /**
- * Base de los constructores de comprobantes. Produce el `ComprobanteRequest` del contrato.
+ * Base de los constructores de comprobantes. Produce la solicitud del tipo de comprobante
+ * (`FacturaRequest`, `NotaCreditoRequest`...), con solo las propiedades de su esquema.
  *
  * Reglas:
- * - Lo que tu asignas se respeta: el constructor nunca sobrescribe un valor con contenido.
- * - `calcularTotales()` es opcional: hace que `construir()` rellene solo los valores vacios
- *   (subtotales, impuestos, totales y el pago sin total) con las reglas del API.
- * - `validar()` devuelve la lista de inconsistencias; no lanza ni bloquea el envio.
+ * - Lo que tu asignas se envia tal cual.
+ * - No calcula ni completa nada: subtotales, impuestos, totales y valores por defecto los das tu y se envian
+ *   tal cual. Los importes conservan su precision sin perdida.
+ * - Las reglas de negocio (campos, formatos, catalogos, topes, importes) viven solo en el API: usa
+ *   `EcuafactClient::validar()` o emite y propaga el 422.
  */
 abstract class AbstractComprobanteBuilder
 {
-    protected ComprobanteRequest $comprobante;
-    private bool $calcular = false;
+    /**
+     * Solicitud del tipo del constructor. Todas llevan `origenReferencia`, `referenciaExterna`, `infoTributaria`,
+     * `info` (con `dirEstablecimiento`, `telefono` y `correo`) e `infoAdicional`.
+     */
+    protected SolicitudComprobante $comprobante;
 
-    protected function __construct(
-        string $tipoDocumento,
-        string $ruc,
-        string $estab,
-        string $ptoEmi,
-        protected Precision $precision,
-    ) {
-        $this->comprobante = new ComprobanteRequest();
+    /** @param SolicitudComprobante $solicitud Solicitud nueva del tipo, con su `info` ya creado. */
+    protected function __construct(SolicitudComprobante $solicitud, string $ruc, string $estab, string $ptoEmi)
+    {
+        $this->comprobante = $solicitud;
         $this->comprobante->infoTributaria = new InfoTributaria();
         $this->comprobante->infoTributaria->ruc = $ruc;
-        $this->comprobante->infoTributaria->tipoDocumento = $tipoDocumento;
         $this->comprobante->infoTributaria->estab = $estab;
         $this->comprobante->infoTributaria->ptoEmi = $ptoEmi;
-        $this->comprobante->info = new InfoDocumento();
-    }
-
-    /** Crea el constructor sobre una copia de un comprobante existente (por ejemplo para calcular o validar). */
-    public static function sobre(ComprobanteRequest $comprobante, ?Precision $precision = null): static
-    {
-        $builder = (new \ReflectionClass(static::class))->newInstanceWithoutConstructor();
-        $builder->comprobante = self::copiar($comprobante);
-        $builder->comprobante->info ??= new InfoDocumento();
-        $builder->precision = $precision ?? new Precision();
-        return $builder;
     }
 
     /** `origenReferencia` (nombre de tu sistema) y `referenciaExterna` (tu numero interno). */
@@ -96,10 +84,9 @@ abstract class AbstractComprobanteBuilder
     }
 
     /**
-     * Acceso directo al comprobante para asignar cualquier campo del contrato. Lo que asignes aqui
-     * tambien se respeta en el calculo.
+     * Acceso directo al comprobante para asignar cualquier campo del contrato; se envia tal cual.
      *
-     * @param callable(ComprobanteRequest): void $cambios
+     * @param callable(SolicitudComprobante): void $cambios
      */
     public function configurar(callable $cambios): static
     {
@@ -107,51 +94,11 @@ abstract class AbstractComprobanteBuilder
         return $this;
     }
 
-    /** Pide que `construir()` y `validar()` rellenen los valores vacios. Opcional. */
-    public function calcularTotales(bool $calcular = true): static
+    /** Devuelve una copia independiente del comprobante, con los valores tal como los asignaste. */
+    public function construir(): SolicitudComprobante
     {
-        $this->calcular = $calcular;
-        return $this;
+        return self::copiar($this->comprobante);
     }
-
-    public function conPrecision(Precision $precision): static
-    {
-        $this->precision = $precision;
-        return $this;
-    }
-
-    public function precision(): Precision
-    {
-        return $this->precision;
-    }
-
-    /** Devuelve una copia del comprobante (calculado si pediste `calcularTotales()`). */
-    public function construir(): ComprobanteRequest
-    {
-        $copia = self::copiar($this->comprobante);
-        if ($this->calcular) {
-            (new CalculadoraComprobante($this->precision))->calcular($copia);
-        }
-        return $copia;
-    }
-
-    /**
-     * Inconsistencias de lo que devolveria `construir()`: totales que no cuadran, campos obligatorios
-     * del tipo, `tipoDocumento` y formatos. Lista vacia si no encontro ninguna. No lanza.
-     *
-     * @return Inconsistencia[]
-     */
-    public function validar(): array
-    {
-        try {
-            $comprobante = $this->construir();
-        } catch (EcuafactSdkException $e) {
-            return [new Inconsistencia('comprobante', $e->getMessage())];
-        }
-        return (new CalculadoraComprobante($this->precision))->validar($comprobante, $this->tipoDocumento());
-    }
-
-    abstract protected function tipoDocumento(): string;
 
     protected static function fechaTexto(string|\DateTimeInterface $fecha): string
     {
@@ -184,9 +131,9 @@ abstract class AbstractComprobanteBuilder
         return $pago;
     }
 
-    private static function copiar(ComprobanteRequest $comprobante): ComprobanteRequest
+    private static function copiar(SolicitudComprobante $comprobante): SolicitudComprobante
     {
-        /** @var ComprobanteRequest $copia */
+        /** @var SolicitudComprobante $copia */
         $copia = unserialize(serialize($comprobante));
         return $copia;
     }

@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Ecuafact\Sdk\Tests;
 
 use Ecuafact\Sdk\Contracts\CodEstado;
-use Ecuafact\Sdk\Contracts\ComprobanteRequest;
+use Ecuafact\Sdk\Contracts\FacturaRequest;
 use Ecuafact\Sdk\Contracts\EstadoOperacion;
-use Ecuafact\Sdk\Contracts\InfoDocumento;
+use Ecuafact\Sdk\Contracts\InfoFactura;
 use Ecuafact\Sdk\Contracts\InfoTributaria;
 use Ecuafact\Sdk\Contracts\Operation;
 use Ecuafact\Sdk\Contracts\Pago;
@@ -73,11 +73,10 @@ final class MejorasSdkTest extends TestCase
         ], $extra)));
     }
 
-    private function comprobante(): ComprobanteRequest
+    private function comprobante(): FacturaRequest
     {
-        $comprobante = new ComprobanteRequest();
+        $comprobante = new FacturaRequest();
         $comprobante->infoTributaria = new InfoTributaria();
-        $comprobante->infoTributaria->tipoDocumento = '01';
         return $comprobante;
     }
 
@@ -302,7 +301,7 @@ final class MejorasSdkTest extends TestCase
         $pago->total = '-0.000001';
         self::assertSame('{"formaPago":"01","total":-0.000001}', Serialization::encode($pago));
 
-        $info = new InfoDocumento();
+        $info = new InfoFactura();
         $info->importeTotal = '1234567890.123456';
         $info->pagos = [$pago];
         $json = Serialization::encode($info);
@@ -322,7 +321,7 @@ final class MejorasSdkTest extends TestCase
     {
         $transport = new FakeTransport(new TransportResponse(202, '{"idOperacion":"x"}'));
         $comprobante = $this->comprobante();
-        $comprobante->info = new InfoDocumento();
+        $comprobante->info = new InfoFactura();
         $comprobante->info->importeTotal = '11.50';
         $comprobante->info->totalSinImpuestos = 0.1 + 0.2;
         $this->cliente($transport)->emitirEn('0123456789', $comprobante, 'K-IMP');
@@ -335,7 +334,7 @@ final class MejorasSdkTest extends TestCase
 
     public function testHydratorCoercionaPorTipo(): void
     {
-        $request = Hydrator::hydrate(ComprobanteRequest::class, json_decode(
+        $request = Hydrator::hydrate(FacturaRequest::class, json_decode(
             '{"info":{"importeTotal":"11.50","totalSinImpuestos":10,"pagos":[{"total":"11.50","plazo":30}]}}'
         ));
         self::assertSame('11.50', $request->info->importeTotal);
@@ -344,7 +343,7 @@ final class MejorasSdkTest extends TestCase
         self::assertStringContainsString('"importeTotal":11.50', Serialization::encode($request));
 
         // Arreglo asociativo tambien se acepta.
-        $assoc = Hydrator::hydrate(ComprobanteRequest::class, ['info' => ['importeTotal' => '1.00']]);
+        $assoc = Hydrator::hydrate(FacturaRequest::class, ['info' => ['importeTotal' => '1.00']]);
         self::assertSame('1.00', $assoc->info->importeTotal);
 
         $perfil = Hydrator::hydrate(PerfilEmisor::class, json_decode('{"obligadoContabilidad":null,"razonSocial":123}'));
@@ -510,7 +509,39 @@ final class MejorasSdkTest extends TestCase
         } catch (EcuafactConfigurationException $error) {
             self::assertStringContainsString('/v1', $error->getMessage());
         }
-        self::assertSame('http://localhost:5000/base', (new EcuafactClientOptions('http://localhost:5000/base', 'k'))->baseAddress);
+        self::assertSame('https://localhost:5000/base', (new EcuafactClientOptions('https://localhost:5000/base', 'k'))->baseAddress);
+    }
+
+    public function testExigeHttpsSinUsuarioConsultaNiFragmento(): void
+    {
+        $esperado = 'debe ser una URL HTTPS absoluta, sin usuario, consulta ni fragmento (por ejemplo https://staging-api.mynexusapi.com/).';
+        $casos = [
+            'http' => 'http://api.example/',
+            'http local' => 'http://localhost:5000/',
+            'usuario' => 'https://usuario@api.example/',
+            'usuario y clave' => 'https://usuario:clave@api.example/',
+            'consulta' => 'https://api.example/?a=1',
+            'fragmento' => 'https://api.example/#x',
+        ];
+        foreach ($casos as $nombre => $url) {
+            try {
+                $creado = new EcuafactClientOptions($url, 'k');
+                self::fail('Se esperaba EcuafactConfigurationException para ' . $nombre . '. Se creo ' . $creado::class . '.');
+            } catch (EcuafactConfigurationException $error) {
+                self::assertSame('baseAddress ' . $esperado, $error->getMessage(), $nombre);
+            }
+        }
+        putenv('ECUAFACT_BASE_URL=http://api.example/');
+        try {
+            $creado = new EcuafactClientOptions(apiKey: 'k');
+            self::fail('Se esperaba EcuafactConfigurationException. Se creo ' . $creado::class . '.');
+        } catch (EcuafactConfigurationException $error) {
+            self::assertSame('ECUAFACT_BASE_URL ' . $esperado, $error->getMessage());
+        } finally {
+            putenv('ECUAFACT_BASE_URL');
+        }
+        self::assertSame('https://staging-api.mynexusapi.com/', (new EcuafactClientOptions('https://staging-api.mynexusapi.com/', 'k'))->baseAddress);
+        self::assertSame('HTTPS://api.example/', (new EcuafactClientOptions('HTTPS://api.example/', 'k'))->baseAddress);
     }
 
     // ---------------------------------------------------------------- 2.4 conexion
@@ -542,7 +573,7 @@ final class MejorasSdkTest extends TestCase
     public function testCurlSinServidorDaExcepcionDeConexion(): void
     {
         $client = new EcuafactClient(new EcuafactClientOptions(
-            baseAddress: 'http://127.0.0.1:9/',
+            baseAddress: 'https://127.0.0.1:9/',
             apiKey: 'clave-red-secreta',
             connectTimeout: 1.0,
             timeout: 2.0,
@@ -800,7 +831,9 @@ final class MejorasSdkTest extends TestCase
             [429, CodEstado::CUPO_AGOTADO, EcuafactQuotaException::class, false],
             [500, CodEstado::ERROR_INTERNO, EcuafactServerException::class, true],
             [502, CodEstado::ERROR_DEPENDENCIA, EcuafactServerException::class, true],
-            [501, CodEstado::NO_IMPLEMENTADO, EcuafactServerException::class, false],
+            [501, CodEstado::NO_IMPLEMENTADO, EcuafactValidationException::class, false],
+            [413, CodEstado::CUERPO_EXCEDIDO, EcuafactValidationException::class, false],
+            [415, CodEstado::SOLICITUD_INVALIDA, EcuafactValidationException::class, false],
             [418, 3999, EcuafactApiException::class, false],
         ];
         foreach ($casos as [$status, $codEstado, $clase, $reintentable]) {

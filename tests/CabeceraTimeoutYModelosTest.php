@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ecuafact\Sdk\Tests;
 
-use Ecuafact\Sdk\Contracts\ComprobanteRequest;
+use Ecuafact\Sdk\Contracts\FacturaRequest;
 use Ecuafact\Sdk\Contracts\InfoTributaria;
 use Ecuafact\Sdk\Contracts\Operation;
 use Ecuafact\Sdk\EcuafactClient;
@@ -77,9 +77,8 @@ final class CabeceraTimeoutYModelosTest extends TestCase
         );
         $client = $this->cliente($transport, ['additionalInfo' => 'erp=SAP; sucursal=Quito']);
 
-        $comprobante = new ComprobanteRequest();
+        $comprobante = new FacturaRequest();
         $comprobante->infoTributaria = new InfoTributaria();
-        $comprobante->infoTributaria->tipoDocumento = '01';
         $client->para('0123456789')->emitir($comprobante, 'K-1');
         $client->esperarResultado(self::UUID, 0.0, 1.0);
         $client->getConsumo();

@@ -12,7 +12,7 @@ use Ecuafact\Sdk\Contracts\CodEstado;
  * Cuerpo de error: `{ "estado": "rechazado", "codEstado": 3002, "msgError": "...", "errores": [...] }`.
  * `codEstado` es numerico de 4 digitos (ver {@see CodEstado}); `msgError` es la descripcion general del codigo
  * y `errores`, el detalle especifico. El cliente lanza la subclase que corresponde al estado HTTP y al
- * `codEstado`: {@see EcuafactAuthException} (401/403), {@see EcuafactValidationException} (400/422),
+ * `codEstado`: {@see EcuafactAuthException} (401/403), {@see EcuafactValidationException} (400/413/415/422/501: solicitudes rechazadas),
  * {@see EcuafactNotFoundException} (404), {@see EcuafactConflictException} (409),
  * {@see EcuafactRateLimitException} (429, 5005 `limite_solicitudes`),
  * {@see EcuafactQuotaException} (429, 4004 `cupo_agotado`)
@@ -89,7 +89,8 @@ class EcuafactApiException extends EcuafactSdkException
         $codEstado = self::codEstadoDe($error);
         $clase = match (true) {
             $estadoHttp === 401, $estadoHttp === 403 => EcuafactAuthException::class,
-            $estadoHttp === 400, $estadoHttp === 422 => EcuafactValidationException::class,
+            $estadoHttp === 400, $estadoHttp === 413, $estadoHttp === 415, $estadoHttp === 422,
+            $estadoHttp === 501 => EcuafactValidationException::class,
             $estadoHttp === 404 => EcuafactNotFoundException::class,
             $estadoHttp === 409 => EcuafactConflictException::class,
             $estadoHttp === 429 && $codEstado === CodEstado::CUPO_AGOTADO => EcuafactQuotaException::class,

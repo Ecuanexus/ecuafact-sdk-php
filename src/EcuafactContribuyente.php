@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace Ecuafact\Sdk;
 
 use Ecuafact\Sdk\Contracts\ArchivoComprobante;
-use Ecuafact\Sdk\Contracts\ComprobanteRequest;
 use Ecuafact\Sdk\Contracts\Operation;
+use Ecuafact\Sdk\Contracts\PaginaComprobantes;
 use Ecuafact\Sdk\Contracts\PerfilEmisor;
 use Ecuafact\Sdk\Contracts\PerfilEmisorUpdate;
 use Ecuafact\Sdk\Contracts\QuotaBucket;
+use Ecuafact\Sdk\Contracts\SolicitudComprobante;
 
 /**
  * Vista de emision y consulta fijada a un contribuyente (multi-RUC). La `identificacion` es el valor
@@ -34,14 +35,14 @@ final class EcuafactContribuyente
     }
 
     public function emitir(
-        ComprobanteRequest $comprobante,
+        SolicitudComprobante $comprobante,
         ?string $idempotencyKey = null,
         ?RequestOptions $opciones = null
     ): EmisionResultado {
         return $this->client->emitirEn($this->identificacion, $comprobante, $idempotencyKey, $opciones);
     }
 
-    public function validar(ComprobanteRequest $comprobante, ?RequestOptions $opciones = null): ValidacionResultado
+    public function validar(SolicitudComprobante $comprobante, ?RequestOptions $opciones = null): ValidacionResultado
     {
         return $this->client->validarEn($this->identificacion, $comprobante, $opciones);
     }
@@ -83,6 +84,28 @@ final class EcuafactContribuyente
         ?RequestOptions $opciones = null
     ): Operation {
         return $this->client->esperarResultado($idOperacion, $intervalo, $maximo, $opciones);
+    }
+
+    /** Lista los comprobantes de este contribuyente (ver EcuafactClient::listarOperaciones). */
+    public function listarOperaciones(
+        ?string $desde = null,
+        ?string $hasta = null,
+        ?string $tipoDocumento = null,
+        ?string $buscar = null,
+        int $pagina = 1,
+        int $tamanoPagina = 20,
+        ?RequestOptions $opciones = null
+    ): PaginaComprobantes {
+        return $this->client->listarOperaciones(
+            $this->identificacion,
+            $desde,
+            $hasta,
+            $tipoDocumento,
+            $buscar,
+            $pagina,
+            $tamanoPagina,
+            $opciones
+        );
     }
 
     public function getConsumo(?RequestOptions $opciones = null): QuotaBucket

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ecuafact\Sdk\Tests;
 
 use Ecuafact\Sdk\Contracts\CodEstado;
-use Ecuafact\Sdk\Contracts\ComprobanteRequest;
+use Ecuafact\Sdk\Contracts\FacturaRequest;
 use Ecuafact\Sdk\Contracts\InfoTributaria;
 use Ecuafact\Sdk\EcuafactAuthException;
 use Ecuafact\Sdk\EcuafactClient;
@@ -35,11 +35,10 @@ final class ValidarComprobanteTest extends TestCase
         ], $extra)));
     }
 
-    private function comprobante(): ComprobanteRequest
+    private function comprobante(): FacturaRequest
     {
-        $comprobante = new ComprobanteRequest();
+        $comprobante = new FacturaRequest();
         $comprobante->infoTributaria = new InfoTributaria();
-        $comprobante->infoTributaria->tipoDocumento = '01';
         return $comprobante;
     }
 
@@ -62,7 +61,6 @@ final class ValidarComprobanteTest extends TestCase
         $cuerpo = json_decode((string) $transport->peticiones[0]['body'], true);
         self::assertArrayNotHasKey('tipoDocumento', $cuerpo['infoTributaria']);
         self::assertStringNotContainsString('"codDoc"', (string) $transport->peticiones[0]['body']);
-        self::assertSame('01', $comprobante->infoTributaria->tipoDocumento);
         self::assertStringStartsWith('application/json', (string) $transport->header(0, 'Content-Type'));
     }
 
@@ -170,5 +168,136 @@ final class ValidarComprobanteTest extends TestCase
         } catch (\Ecuafact\Sdk\EcuafactServerException) {
         }
         self::assertCount(1, $transport->peticiones);
+    }
+
+    public function testValidarDevuelveTalCualValidoErroresYAdvertencias(): void
+    {
+        $transport = new FakeTransport(new TransportResponse(
+            200,
+            '{"valido":false,"errores":["$.info.x: mal"],"advertencias":["La firma del XML se ignora."]}'
+        ));
+        $resultado = $this->cliente($transport)->validar($this->comprobante());
+
+        self::assertFalse($resultado->valido);
+        self::assertSame(['$.info.x: mal'], $resultado->errores);
+        self::assertSame(['La firma del XML se ignora.'], $resultado->advertencias);
+    }
+
+    public function testValidarSiempreLlamaAlApiAunConUnCuerpoVacioODeFormaIncorrecta(): void
+    {
+        $tipos = [
+            'facturas' => FacturaRequest::class,
+            'liquidaciones-compra' => \Ecuafact\Sdk\Contracts\LiquidacionCompraRequest::class,
+            'notas-credito' => \Ecuafact\Sdk\Contracts\NotaCreditoRequest::class,
+            'notas-debito' => \Ecuafact\Sdk\Contracts\NotaDebitoRequest::class,
+            'guias-remision' => \Ecuafact\Sdk\Contracts\GuiaRemisionRequest::class,
+            'retenciones' => \Ecuafact\Sdk\Contracts\RetencionRequest::class,
+        ];
+        foreach ($tipos as $recurso => $clase) {
+            $transport = new FakeTransport(new TransportResponse(422, self::INVALIDO));
+            $comprobante = new $clase();
+            $comprobante->infoTributaria = new InfoTributaria();
+            $comprobante->infoTributaria->estab = '1';
+            $comprobante->infoTributaria->secuencial = 'abc';
+
+            $resultado = $this->cliente($transport)->validar($comprobante);
+
+            self::assertFalse($resultado->valido);
+            self::assertCount(1, $transport->peticiones);
+            self::assertSame(
+                'https://api.example/v1/contribuyentes/0123456789/' . $recurso . '/validar',
+                $transport->peticiones[0]['url']
+            );
+            self::assertStringContainsString('"secuencial":"abc"', (string) $transport->peticiones[0]['body']);
+        }
+    }
+
+    public function testEmitirNoPrevalidaYPropagaElValidationDelApi(): void
+    {
+        $transport = new FakeTransport(new TransportResponse(422, self::INVALIDO, ['X-Correlation-Id' => 'corr-9']));
+        $comprobante = $this->comprobante();
+        $comprobante->infoTributaria->estab = '1';
+        $comprobante->infoTributaria->ptoEmi = 'xx';
+        $comprobante->infoTributaria->secuencial = '12';
+
+        try {
+            $this->cliente($transport)->emitir($comprobante);
+            self::fail('Se esperaba EcuafactValidationException.');
+        } catch (EcuafactValidationException $exception) {
+            self::assertSame(422, $exception->estadoHttp);
+            self::assertSame(CodEstado::COMPROBANTE_INVALIDO, $exception->codEstado);
+            self::assertSame(
+                ['$.detalles[0].impuestos[0].valor: Valor de impuesto no coincide con base y tasa.'],
+                $exception->errores
+            );
+        }
+        self::assertCount(1, $transport->peticiones, 'El 422 no se reintenta ni se detecta localmente.');
+        self::assertSame(
+            'https://api.example/v1/contribuyentes/0123456789/facturas',
+            $transport->peticiones[0]['url']
+        );
+        self::assertNotNull($transport->header(0, 'Idempotency-Key'));
+    }
+
+    private const ADMITIDO = '{"estado":"recibido","codEstado":1002,"idOperacion":"op-1"}';
+
+    public function testPorDefectoEmitirEnviaUnaSolaPeticion(): void
+    {
+        $transport = new FakeTransport(new TransportResponse(202, self::ADMITIDO));
+        $this->cliente($transport)->emitir($this->comprobante());
+
+        self::assertCount(1, $transport->peticiones);
+        self::assertStringEndsNotWith('/validar', $transport->peticiones[0]['url']);
+    }
+
+    public function testValidarAntesDeEmitirHace2PeticionesYExponeAdvertencias(): void
+    {
+        $transport = new FakeTransport(
+            new TransportResponse(200, '{"valido":true,"advertencias":["Aviso 1"]}'),
+            new TransportResponse(202, self::ADMITIDO)
+        );
+        $resultado = $this->cliente($transport, ['validarAntesDeEmitir' => true])->emitir($this->comprobante());
+
+        self::assertCount(2, $transport->peticiones);
+        self::assertStringEndsWith('/facturas/validar', $transport->peticiones[0]['url']);
+        self::assertStringEndsWith('/facturas', $transport->peticiones[1]['url']);
+        self::assertSame(['Aviso 1'], $resultado->advertencias);
+    }
+
+    public function testValidarAntesDeEmitirRechazadoNoEmite(): void
+    {
+        $transport = new FakeTransport(new TransportResponse(422, self::INVALIDO));
+        try {
+            $this->cliente($transport, ['validarAntesDeEmitir' => true])->emitir($this->comprobante());
+            self::fail('Se esperaba EcuafactValidationException.');
+        } catch (EcuafactValidationException $exception) {
+            self::assertSame(422, $exception->estadoHttp);
+            self::assertSame(CodEstado::COMPROBANTE_INVALIDO, $exception->codEstado);
+            self::assertCount(1, $exception->errores);
+        }
+        self::assertCount(1, $transport->peticiones, 'No se envia la emision.');
+    }
+
+    public function testValidarAntesDeEmitirConValidoFalseEn200NoEmite(): void
+    {
+        $transport = new FakeTransport(new TransportResponse(200, '{"valido":false,"errores":["x"]}'));
+        $this->expectException(EcuafactValidationException::class);
+        try {
+            $this->cliente($transport, ['validarAntesDeEmitir' => true])->emitir($this->comprobante());
+        } finally {
+            self::assertCount(1, $transport->peticiones);
+        }
+    }
+
+    public function testOpcionPorLlamadaReemplazaAlCliente(): void
+    {
+        $transport = new FakeTransport(new TransportResponse(202, self::ADMITIDO));
+        $this->cliente($transport, ['validarAntesDeEmitir' => true])
+            ->emitir($this->comprobante(), null, new RequestOptions(validarAntes: false));
+        self::assertCount(1, $transport->peticiones);
+
+        $transport = new FakeTransport(new TransportResponse(200, self::VALIDO), new TransportResponse(202, self::ADMITIDO));
+        $this->cliente($transport)->emitir($this->comprobante(), null, new RequestOptions(validarAntes: true));
+        self::assertCount(2, $transport->peticiones);
     }
 }

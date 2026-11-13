@@ -6,6 +6,7 @@ namespace Ecuafact\Sdk\Transport;
 
 use Ecuafact\Sdk\EcuafactConfigurationException;
 use Ecuafact\Sdk\EcuafactConnectionException;
+use Ecuafact\Sdk\EcuafactResponseTooLargeException;
 use Ecuafact\Sdk\EcuafactTimeoutException;
 
 /**
@@ -18,9 +19,15 @@ use Ecuafact\Sdk\EcuafactTimeoutException;
  * - `verifyPeer`: false desactiva la validacion del certificado y del nombre del host. Solo para pruebas locales.
  * - `curlOptions`: opciones CURLOPT_* extra; se aplican al final y pueden reemplazar las anteriores.
  */
-final class CurlTransport implements TimeoutOverrideTransportInterface
+final class CurlTransport implements TimeoutOverrideTransportInterface, ResponseLimitAwareTransportInterface
 {
     private ?\CurlHandle $handle = null;
+    private ?int $maxBytes = null;
+
+    public function limitarRespuesta(?int $maxBytes): void
+    {
+        $this->maxBytes = $maxBytes;
+    }
 
     /** @param array<int, mixed> $curlOptions */
     public function __construct(
@@ -94,6 +101,19 @@ final class CurlTransport implements TimeoutOverrideTransportInterface
             }
             return strlen($line);
         };
+        $contenido = '';
+        $leidos = 0;
+        $excedido = false;
+        $tope = $this->maxBytes;
+        $options[CURLOPT_WRITEFUNCTION] = static function ($curl, string $trozo) use (&$contenido, &$leidos, &$excedido, $tope): int {
+            $leidos += strlen($trozo);
+            if ($tope !== null && $leidos > $tope) {
+                $excedido = true;
+                return 0;
+            }
+            $contenido .= $trozo;
+            return strlen($trozo);
+        };
         if ($body !== null) {
             $options[CURLOPT_POSTFIELDS] = $body;
         }
@@ -104,6 +124,10 @@ final class CurlTransport implements TimeoutOverrideTransportInterface
             throw new EcuafactConfigurationException('Una de las opciones de cURL (curlOptions) no es valida.');
         }
         $result = curl_exec($handle);
+        if ($excedido && $tope !== null) {
+            $this->handle = null;
+            throw new EcuafactResponseTooLargeException($tope, $leidos);
+        }
         $errno = curl_errno($handle);
         $error = curl_error($handle);
         $status = (int) curl_getinfo($handle, CURLINFO_HTTP_CODE);
@@ -114,7 +138,7 @@ final class CurlTransport implements TimeoutOverrideTransportInterface
             }
             throw new EcuafactConnectionException('No hay conexion con el API. ' . $error, $errno);
         }
-        return new TransportResponse($status, (string) $result, $responseHeaders);
+        return new TransportResponse($status, $contenido, $responseHeaders);
     }
 
     /**

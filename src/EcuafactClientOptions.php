@@ -25,6 +25,9 @@ use Ecuafact\Sdk\Transport\TransportInterface;
  *   imprimible, sin espacios al inicio ni al final, maximo 256 caracteres. Null o vacio no la envia.
  *   No aparece en `var_dump` ni en las excepciones.
  *
+ * - `validarAntesDeEmitir`: si es `true`, `emitir` llama primero al endpoint `/validar` y solo envia la emision
+ *   si el API la da por valida (2 peticiones por emision). Por defecto `false`: `emitir` envia directo y propaga el 422.
+ *
  * Una opcion invalida lanza {@see EcuafactConfigurationException}.
  *
  * @property-read string $apiKey Credencial X-Api-Key (solo lectura).
@@ -42,6 +45,16 @@ final class EcuafactClientOptions
     public readonly RetryBackoff $retryBackoff;
     /** Valor de la cabecera X-Additional-Info en todas las solicitudes; null no la envia. */
     public readonly ?string $additionalInfo;
+
+    /** Valor de `maxResponseBytes` que aplica el tope por defecto (32 MiB; 100 MiB en descargas). */
+    public const POR_DEFECTO = -1;
+    public const DEFAULT_MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
+    public const DEFAULT_MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024;
+
+    /** Tope efectivo del cuerpo de una respuesta, en bytes; null = sin tope. */
+    public readonly ?int $maxResponseBytes;
+    /** Tope efectivo de una descarga de archivo (RIDE/XML), en bytes; null = sin tope. */
+    public readonly ?int $maxDownloadBytes;
 
     /** Longitud maxima de X-Additional-Info. */
     public const ADDITIONAL_INFO_MAX = 256;
@@ -73,8 +86,24 @@ final class EcuafactClientOptions
         public readonly bool $verifyPeer = true,
         public readonly array $curlOptions = [],
         ?string $additionalInfo = null,
+        ?int $maxResponseBytes = self::POR_DEFECTO,
+        public readonly bool $validarAntesDeEmitir = false,
     ) {
         $this->additionalInfo = self::validarAdditionalInfo($additionalInfo);
+        if ($maxResponseBytes === self::POR_DEFECTO) {
+            $this->maxResponseBytes = self::DEFAULT_MAX_RESPONSE_BYTES;
+            $this->maxDownloadBytes = self::DEFAULT_MAX_DOWNLOAD_BYTES;
+        } elseif ($maxResponseBytes === null || $maxResponseBytes === 0) {
+            $this->maxResponseBytes = null;
+            $this->maxDownloadBytes = null;
+        } elseif ($maxResponseBytes < 0) {
+            throw new EcuafactConfigurationException(
+                'maxResponseBytes debe ser mayor que 0, o null/0 para desactivar el tope.'
+            );
+        } else {
+            $this->maxResponseBytes = $maxResponseBytes;
+            $this->maxDownloadBytes = $maxResponseBytes;
+        }
         $resolved = self::resolveApiKey($apiKey);
         $this->credencial = static fn (): string => $resolved;
         $this->baseAddress = self::resolveBaseAddress($baseAddress);
@@ -195,10 +224,10 @@ final class EcuafactClientOptions
         }
         $parts = parse_url($baseAddress);
         $scheme = is_array($parts) ? strtolower((string) ($parts['scheme'] ?? '')) : '';
-        if (!is_array($parts) || ($scheme !== 'http' && $scheme !== 'https') || ($parts['host'] ?? '') === ''
+        if (!is_array($parts) || $scheme !== 'https' || ($parts['host'] ?? '') === ''
             || isset($parts['query']) || isset($parts['fragment']) || isset($parts['user']) || isset($parts['pass'])) {
             throw new EcuafactConfigurationException(
-                $origen . ' debe ser una URL absoluta http o https, sin consulta ni credenciales (por ejemplo https://staging-api.mynexusapi.com/).'
+                $origen . ' debe ser una URL HTTPS absoluta, sin usuario, consulta ni fragmento (por ejemplo https://staging-api.mynexusapi.com/).'
             );
         }
         if (preg_match('#/v1/?$#i', $baseAddress) === 1) {

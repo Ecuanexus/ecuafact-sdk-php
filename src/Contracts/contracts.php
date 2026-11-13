@@ -16,277 +16,227 @@ namespace Ecuafact\Sdk\Contracts;
 // que 0.1 + 0.2 viaja como 0.3.
 // ---------------------------------------------------------------------------
 
+/**
+ * Un tipo de comprobante emitible. Cada tipo tiene su propia clase de solicitud (como tiene su propio endpoint) y
+ * el cliente elige la ruta por ella (ver {@see TipoComprobante}). Lo implementan FacturaRequest,
+ * LiquidacionCompraRequest, NotaCreditoRequest, NotaDebitoRequest, GuiaRemisionRequest y RetencionRequest.
+ */
+interface SolicitudComprobante
+{
+    /** Tipo de comprobante de la solicitud; el SDK lo usa para elegir la ruta y no viaja en el cuerpo. */
+    public function tipoComprobante(): TipoComprobante;
+}
+
 class CampoAdicional
 {
+    /** Obligatorio. */
     public ?string $nombre = null;
+    /** Obligatorio. */
     public ?string $valor = null;
 }
 
 class Impuesto
 {
+    /** Obligatorio. */
     public ?string $codigo = null;
+    /** Obligatorio. */
     public ?string $codigoPorcentaje = null;
     public float|string|null $tarifa = null;
+    /** Obligatorio. */
     public float|string|null $baseImponible = null;
+    /** Obligatorio. */
     public float|string|null $valor = null;
-    public float|string|null $descuentoAdicional = null;
-    public float|string|null $valorDevolucionIva = null;
 }
 
 class Pago
 {
+    /** Obligatorio. */
     public ?string $formaPago = null;
+    /** Obligatorio. */
     public float|string|null $total = null;
     public float|string|null $plazo = null;
     public ?string $unidadTiempo = null;
 }
 
-class Detalle
+class InfoTributaria
 {
+    /** Obligatorio. */
+    public ?string $ruc = null;
+    /** Obligatorio. */
+    public ?string $estab = null;
+    /** Obligatorio. */
+    public ?string $ptoEmi = null;
+    public ?string $secuencial = null;
+}
+
+/** Linea de factura y de liquidacion de compra (`DetalleCompraVentaDto`). */
+class DetalleCompraVenta
+{
+    /** Obligatorio. */
     public ?string $codigoPrincipal = null;
     public ?string $codigoAuxiliar = null;
-    public ?string $codigoInterno = null;
-    public ?string $codigoAdicional = null;
+    /** Obligatorio. */
     public ?string $descripcion = null;
-    public ?string $unidadMedida = null;
+    /** Obligatorio. */
     public float|string|null $cantidad = null;
+    /** Obligatorio. */
     public float|string|null $precioUnitario = null;
-    public float|string|null $precioSinSubsidio = null;
+    /** Obligatorio. */
     public float|string|null $descuento = null;
+    /** Obligatorio. */
     public float|string|null $precioTotalSinImpuesto = null;
-    /** @var Impuesto[] */
+    /** @var Impuesto[] Obligatorio. */
     public ?array $impuestos = null;
     /** @var CampoAdicional[] */
     public ?array $detallesAdicionales = null;
 }
 
+/** Linea de nota de credito (`DetalleNotaCreditoDto`). */
+class DetalleNotaCredito
+{
+    /** Obligatorio. */
+    public ?string $codigoInterno = null;
+    public ?string $codigoAdicional = null;
+    /** Obligatorio. */
+    public ?string $descripcion = null;
+    /** Obligatorio. */
+    public float|string|null $cantidad = null;
+    /** Obligatorio. */
+    public float|string|null $precioUnitario = null;
+    /** Obligatorio. */
+    public float|string|null $descuento = null;
+    /** Obligatorio. */
+    public float|string|null $precioTotalSinImpuesto = null;
+    /** @var Impuesto[] Obligatorio. */
+    public ?array $impuestos = null;
+    /** @var CampoAdicional[] */
+    public ?array $detallesAdicionales = null;
+}
+
+/** Bien trasladado en una guia de remision (`DetalleGuiaDto`). */
+class DetalleGuia
+{
+    public ?string $codigoInterno = null;
+    public ?string $codigoAdicional = null;
+    /** Obligatorio. */
+    public ?string $descripcion = null;
+    /** Obligatorio. */
+    public float|string|null $cantidad = null;
+    /** @var CampoAdicional[] */
+    public ?array $detallesAdicionales = null;
+}
+
+/** Motivo de una nota de debito (`MotivoDto`). */
 class Motivo
 {
+    /** Obligatorio. */
     public ?string $razon = null;
+    /** Obligatorio. */
     public float|string|null $valor = null;
 }
 
+/** Destinatario de una guia de remision (`DestinatarioDto`). */
 class Destinatario
 {
+    /** Obligatorio. */
     public ?string $identificacionDestinatario = null;
+    /** Obligatorio. */
     public ?string $razonSocialDestinatario = null;
+    /** Obligatorio. */
     public ?string $dirDestinatario = null;
+    /** Obligatorio. */
     public ?string $motivoTraslado = null;
     public ?string $docAduaneroUnico = null;
     public ?string $codEstabDestino = null;
     public ?string $ruta = null;
-    /** @var Detalle[] */
+    /** @var DetalleGuia[] Obligatorio. */
     public ?array $detalles = null;
 }
 
 class ImpuestoDocSustento
 {
+    /** Obligatorio. */
     public ?string $codImpuestoDocSustento = null;
+    /** Obligatorio. */
     public ?string $codigoPorcentaje = null;
+    /** Obligatorio. */
     public float|string|null $baseImponible = null;
+    /** Obligatorio. */
     public float|string|null $tarifa = null;
+    /** Obligatorio. */
     public float|string|null $valorImpuesto = null;
-}
-
-class Dividendo
-{
-    public ?string $fechaPagoDiv = null;
-    public float|string|null $imRentaSoc = null;
-    public ?string $ejerFisUtDiv = null;
-}
-
-class CompraCajBanano
-{
-    public ?string $numCajBan = null;
-    public float|string|null $precCajBan = null;
 }
 
 class RetencionLinea
 {
+    /** Obligatorio. */
     public ?string $codigo = null;
+    /** Obligatorio. */
     public ?string $codigoRetencion = null;
+    /** Obligatorio. */
     public float|string|null $baseImponible = null;
+    /** Obligatorio. */
     public float|string|null $porcentajeRetener = null;
+    /** Obligatorio. */
     public float|string|null $valorRetenido = null;
-    public ?Dividendo $dividendos = null;
-    public ?CompraCajBanano $compraCajBanano = null;
 }
 
-class DetalleImpuestoReembolso
-{
-    public ?string $codigo = null;
-    public ?string $codigoPorcentaje = null;
-    public float|string|null $tarifa = null;
-    public float|string|null $baseImponibleReembolso = null;
-    public float|string|null $impuestoReembolso = null;
-}
-
-class CompensacionReembolso
-{
-    public ?string $codigo = null;
-    public float|string|null $tarifa = null;
-    public float|string|null $valor = null;
-}
-
-class ReembolsoDetalle
-{
-    public ?string $tipoIdentificacionProveedorReembolso = null;
-    public ?string $identificacionProveedorReembolso = null;
-    public ?string $codPaisPagoProveedorReembolso = null;
-    public ?string $tipoProveedorReembolso = null;
-    public ?string $codDocReembolso = null;
-    public ?string $estabDocReembolso = null;
-    public ?string $ptoEmiDocReembolso = null;
-    public ?string $secuencialDocReembolso = null;
-    public ?string $fechaEmisionDocReembolso = null;
-    public ?string $numeroautorizacionDocReemb = null;
-    /** @var DetalleImpuestoReembolso[] */
-    public ?array $detalleImpuestos = null;
-    /** @var CompensacionReembolso[] */
-    public ?array $compensacionesReembolso = null;
-}
-
+/** Documento de sustento de una retencion (`DocsSustentoDto`). */
 class DocsSustento
 {
+    /** Obligatorio. */
     public ?string $codSustento = null;
+    /** Obligatorio. */
     public ?string $codDocSustento = null;
+    /** Obligatorio. */
     public ?string $numDocSustento = null;
+    /** Obligatorio. */
     public ?string $fechaEmisionDocSustento = null;
+    /** Obligatorio. */
     public ?string $fechaRegistroContable = null;
     public ?string $numAutDocSustento = null;
+    /** Obligatorio. */
     public ?string $pagoLocExt = null;
-    public ?string $tipoRegi = null;
-    public ?string $paisEfecPago = null;
-    public ?string $aplicConvDobTrib = null;
-    public ?string $pagExtSujRetNorLeg = null;
-    public ?string $pagoRegFis = null;
+    /** Obligatorio. */
     public float|string|null $totalSinImpuestos = null;
-    public float|string|null $totalComprobantesReembolso = null;
-    public float|string|null $totalBaseImponibleReembolso = null;
-    public float|string|null $totalImpuestoReembolso = null;
+    /** Obligatorio. */
     public float|string|null $importeTotal = null;
-    /** @var ImpuestoDocSustento[] */
+    /** @var ImpuestoDocSustento[] Obligatorio. */
     public ?array $impuestosDocSustento = null;
-    /** @var RetencionLinea[] */
+    /** @var RetencionLinea[] Obligatorio. */
     public ?array $retenciones = null;
-    /** @var ReembolsoDetalle[] */
-    public ?array $reembolsos = null;
-    /** @var Pago[] */
+    /** @var Pago[] Obligatorio. */
     public ?array $pagos = null;
 }
 
-class Compensacion
+/** Cabecera de la factura (`InfoFacturaDto`), con los datos de exportacion. */
+class InfoFactura
 {
-    public ?string $codigo = null;
-    public float|string|null $tarifa = null;
-    public float|string|null $valor = null;
-}
-
-class RetencionFacturaLinea
-{
-    public ?string $codigo = null;
-    public ?string $codigoPorcentaje = null;
-    public float|string|null $tarifa = null;
-    public float|string|null $valor = null;
-}
-
-class DestinoSustitutiva
-{
-    public ?string $motivoTraslado = null;
-    public ?string $docAduaneroUnico = null;
-    public ?string $codEstabDestino = null;
-    public ?string $ruta = null;
-}
-
-class InfoSustitutivaGuia
-{
-    public ?string $dirPartida = null;
-    public ?string $dirDestinatario = null;
-    public ?string $fechaIniTransporte = null;
-    public ?string $fechaFinTransporte = null;
-    public ?string $razonSocialTransportista = null;
-    public ?string $tipoIdentificacionTransportista = null;
-    public ?string $rucTransportista = null;
-    public ?string $placa = null;
-    /** @var DestinoSustitutiva[] */
-    public ?array $destinos = null;
-}
-
-class RubroTercero
-{
-    public ?string $concepto = null;
-    public float|string|null $total = null;
-}
-
-class TipoNegociable
-{
-    public ?string $correo = null;
-}
-
-class MaquinaFiscal
-{
-    public ?string $marca = null;
-    public ?string $modelo = null;
-    public ?string $serie = null;
-}
-
-class InfoTributaria
-{
-    public ?string $ruc = null;
-    /** Tipo de comprobante (`01`, `03`, `04`, `05`, `06`, `07`). */
-    public ?string $tipoDocumento = null;
-    public ?string $estab = null;
-    public ?string $ptoEmi = null;
-    public ?string $secuencial = null;
-}
-
-class InfoDocumento
-{
+    /** Obligatorio. */
     public ?string $fechaEmision = null;
-    public ?string $dirEstablecimiento = null;
+    /** Obligatorio. */
     public ?string $tipoIdentificacionComprador = null;
+    /** Obligatorio. */
     public ?string $razonSocialComprador = null;
+    /** Obligatorio. */
     public ?string $identificacionComprador = null;
     public ?string $direccionComprador = null;
-    public ?string $tipoIdentificacionProveedor = null;
-    public ?string $razonSocialProveedor = null;
-    public ?string $identificacionProveedor = null;
-    public ?string $direccionProveedor = null;
+    /** Obligatorio. */
     public float|string|null $totalSinImpuestos = null;
+    /** Obligatorio. */
     public ?string $moneda = null;
+    /** Obligatorio. */
     public float|string|null $totalDescuento = null;
-    /** @var Impuesto[] */
+    /** @var Impuesto[] Obligatorio. */
     public ?array $totalConImpuestos = null;
+    /** Obligatorio. */
     public float|string|null $importeTotal = null;
+    /** Obligatorio. */
     public float|string|null $propina = null;
-    /** @var Pago[] */
+    /** @var Pago[] Obligatorio. */
     public ?array $pagos = null;
-    public ?string $codDocModificado = null;
-    public ?string $numDocModificado = null;
-    public ?string $fechaEmisionDocSustento = null;
-    public float|string|null $totalDocumentoSustento = null;
-    public ?string $motivo = null;
-    public float|string|null $valorModificacion = null;
-    /** @var Impuesto[] */
-    public ?array $impuestos = null;
-    public float|string|null $valorTotal = null;
-    public ?string $dirPartida = null;
-    public ?string $razonSocialTransportista = null;
-    public ?string $tipoIdentificacionTransportista = null;
-    public ?string $rucTransportista = null;
-    public ?string $fechaIniTransporte = null;
-    public ?string $fechaFinTransporte = null;
+    public ?string $guiaRemision = null;
     public ?string $placa = null;
-    public ?string $tipoIdentificacionSujetoRetenido = null;
-    public ?string $razonSocialSujetoRetenido = null;
-    public ?string $identificacionSujetoRetenido = null;
-    public ?string $periodoFiscal = null;
-    public ?string $parteRel = null;
-    public ?string $tipoSujetoRetenido = null;
-    public ?string $telefono = null;
-    public ?string $correo = null;
-    public ?string $contribuyenteEspecial = null;
-    public ?string $obligadoContabilidad = null;
     public ?string $comercioExterior = null;
     public ?string $incoTermFactura = null;
     public ?string $lugarIncoTerm = null;
@@ -295,48 +245,280 @@ class InfoDocumento
     public ?string $puertoDestino = null;
     public ?string $paisDestino = null;
     public ?string $paisAdquisicion = null;
-    public ?string $guiaRemision = null;
-    public float|string|null $totalSubsidio = null;
     public ?string $incoTermTotalSinImpuestos = null;
-    public ?string $codDocReembolso = null;
-    public float|string|null $totalComprobantesReembolso = null;
-    public float|string|null $totalBaseImponibleReembolso = null;
-    public float|string|null $totalImpuestoReembolso = null;
-    /** @var Compensacion[] */
-    public ?array $compensaciones = null;
-    public float|string|null $fleteInternacional = null;
-    public float|string|null $seguroInternacional = null;
-    public float|string|null $gastosAduaneros = null;
-    public float|string|null $gastosTransporteOtros = null;
-    public float|string|null $valorRetIva = null;
-    public float|string|null $valorRetRenta = null;
-    /** @var ReembolsoDetalle[] */
-    public ?array $reembolsos = null;
-    /** @var RetencionFacturaLinea[] */
-    public ?array $retenciones = null;
-    public ?InfoSustitutivaGuia $infoSustitutivaGuiaRemision = null;
-    /** @var RubroTercero[] */
-    public ?array $otrosRubrosTerceros = null;
-    public ?TipoNegociable $tipoNegociable = null;
-    public ?MaquinaFiscal $maquinaFiscal = null;
+    public ?string $dirEstablecimiento = null;
+    public ?string $telefono = null;
+    public ?string $correo = null;
 }
 
-class ComprobanteRequest
+/** Cabecera de la liquidacion de compra (`InfoLiquidacionCompraDto`). */
+class InfoLiquidacionCompra
 {
+    /** Obligatorio. */
+    public ?string $fechaEmision = null;
+    /** Obligatorio. */
+    public ?string $tipoIdentificacionProveedor = null;
+    /** Obligatorio. */
+    public ?string $razonSocialProveedor = null;
+    /** Obligatorio. */
+    public ?string $identificacionProveedor = null;
+    public ?string $direccionProveedor = null;
+    /** Obligatorio. */
+    public float|string|null $totalSinImpuestos = null;
+    /** Obligatorio. */
+    public ?string $moneda = null;
+    /** Obligatorio. */
+    public float|string|null $totalDescuento = null;
+    /** @var Impuesto[] Obligatorio. */
+    public ?array $totalConImpuestos = null;
+    /** Obligatorio. */
+    public float|string|null $importeTotal = null;
+    /** @var Pago[] Obligatorio. */
+    public ?array $pagos = null;
+    public ?string $dirEstablecimiento = null;
+    public ?string $telefono = null;
+    public ?string $correo = null;
+}
+
+/** Cabecera de la nota de credito (`InfoNotaCreditoDto`). */
+class InfoNotaCredito
+{
+    /** Obligatorio. */
+    public ?string $fechaEmision = null;
+    /** Obligatorio. */
+    public ?string $tipoIdentificacionComprador = null;
+    /** Obligatorio. */
+    public ?string $razonSocialComprador = null;
+    /** Obligatorio. */
+    public ?string $identificacionComprador = null;
+    public ?string $direccionComprador = null;
+    /** Obligatorio. */
+    public float|string|null $totalSinImpuestos = null;
+    /** Obligatorio. */
+    public ?string $moneda = null;
+    /** @var Impuesto[] Obligatorio. */
+    public ?array $totalConImpuestos = null;
+    /** Obligatorio. */
+    public float|string|null $valorModificacion = null;
+    /** Obligatorio. */
+    public ?string $codDocModificado = null;
+    /** Obligatorio. */
+    public ?string $numDocModificado = null;
+    /** Obligatorio. */
+    public ?string $fechaEmisionDocSustento = null;
+    public float|string|null $totalDocumentoSustento = null;
+    /** Obligatorio. */
+    public ?string $motivo = null;
+    public ?string $dirEstablecimiento = null;
+    public ?string $telefono = null;
+    public ?string $correo = null;
+}
+
+/** Cabecera de la nota de debito (`InfoNotaDebitoDto`). */
+class InfoNotaDebito
+{
+    /** Obligatorio. */
+    public ?string $fechaEmision = null;
+    /** Obligatorio. */
+    public ?string $tipoIdentificacionComprador = null;
+    /** Obligatorio. */
+    public ?string $razonSocialComprador = null;
+    /** Obligatorio. */
+    public ?string $identificacionComprador = null;
+    public ?string $direccionComprador = null;
+    /** Obligatorio. */
+    public float|string|null $totalSinImpuestos = null;
+    public ?string $moneda = null;
+    /** Obligatorio. */
+    public ?string $codDocModificado = null;
+    /** Obligatorio. */
+    public ?string $numDocModificado = null;
+    /** Obligatorio. */
+    public ?string $fechaEmisionDocSustento = null;
+    /** Obligatorio. */
+    public float|string|null $valorTotal = null;
+    /** @var Impuesto[] Obligatorio. */
+    public ?array $impuestos = null;
+    /** @var Pago[] Obligatorio. */
+    public ?array $pagos = null;
+    public ?string $dirEstablecimiento = null;
+    public ?string $telefono = null;
+    public ?string $correo = null;
+}
+
+/** Cabecera de la guia de remision (`InfoGuiaRemisionDto`). */
+class InfoGuiaRemision
+{
+    /** Obligatorio. */
+    public ?string $dirPartida = null;
+    /** Obligatorio. */
+    public ?string $razonSocialTransportista = null;
+    /** Obligatorio. */
+    public ?string $tipoIdentificacionTransportista = null;
+    /** Obligatorio. */
+    public ?string $rucTransportista = null;
+    /** Obligatorio. */
+    public ?string $fechaIniTransporte = null;
+    /** Obligatorio. */
+    public ?string $fechaFinTransporte = null;
+    /** Obligatorio. */
+    public ?string $placa = null;
+    public ?string $dirEstablecimiento = null;
+    public ?string $telefono = null;
+    public ?string $correo = null;
+}
+
+/** Cabecera de la retencion (`InfoComprobanteRetencionDto`). */
+class InfoComprobanteRetencion
+{
+    /** Obligatorio. */
+    public ?string $fechaEmision = null;
+    /** Obligatorio. */
+    public ?string $tipoIdentificacionSujetoRetenido = null;
+    /** Obligatorio. */
+    public ?string $razonSocialSujetoRetenido = null;
+    /** Obligatorio. */
+    public ?string $identificacionSujetoRetenido = null;
+    /** Obligatorio. */
+    public ?string $periodoFiscal = null;
+    /** Obligatorio. */
+    public ?string $parteRel = null;
+    public ?string $tipoSujetoRetenido = null;
+    public ?string $dirEstablecimiento = null;
+    public ?string $telefono = null;
+    public ?string $correo = null;
+}
+
+/** Factura (`FacturaRequestDto`), tipo 01. */
+class FacturaRequest implements SolicitudComprobante
+{
+    /** Obligatorio. */
     public ?string $origenReferencia = null;
+    /** Obligatorio. */
     public ?string $referenciaExterna = null;
+    /** Obligatorio. */
     public ?InfoTributaria $infoTributaria = null;
-    public ?InfoDocumento $info = null;
-    /** @var Detalle[] */
+    /** Obligatorio. */
+    public ?InfoFactura $info = null;
+    /** @var DetalleCompraVenta[] Obligatorio. */
     public ?array $detalles = null;
-    /** @var Motivo[] */
+    /** @var CampoAdicional[] */
+    public ?array $infoAdicional = null;
+
+    public function tipoComprobante(): TipoComprobante
+    {
+        return TipoComprobante::Factura;
+    }
+}
+
+/** Liquidacion de compra (`LiquidacionCompraRequestDto`), tipo 03. */
+class LiquidacionCompraRequest implements SolicitudComprobante
+{
+    /** Obligatorio. */
+    public ?string $origenReferencia = null;
+    /** Obligatorio. */
+    public ?string $referenciaExterna = null;
+    /** Obligatorio. */
+    public ?InfoTributaria $infoTributaria = null;
+    /** Obligatorio. */
+    public ?InfoLiquidacionCompra $info = null;
+    /** @var DetalleCompraVenta[] Obligatorio. */
+    public ?array $detalles = null;
+    /** @var CampoAdicional[] */
+    public ?array $infoAdicional = null;
+
+    public function tipoComprobante(): TipoComprobante
+    {
+        return TipoComprobante::LiquidacionCompra;
+    }
+}
+
+/** Nota de credito (`NotaCreditoRequestDto`), tipo 04. */
+class NotaCreditoRequest implements SolicitudComprobante
+{
+    /** Obligatorio. */
+    public ?string $origenReferencia = null;
+    /** Obligatorio. */
+    public ?string $referenciaExterna = null;
+    /** Obligatorio. */
+    public ?InfoTributaria $infoTributaria = null;
+    /** Obligatorio. */
+    public ?InfoNotaCredito $info = null;
+    /** @var DetalleNotaCredito[] Obligatorio. */
+    public ?array $detalles = null;
+    /** @var CampoAdicional[] */
+    public ?array $infoAdicional = null;
+
+    public function tipoComprobante(): TipoComprobante
+    {
+        return TipoComprobante::NotaCredito;
+    }
+}
+
+/** Nota de debito (`NotaDebitoRequestDto`), tipo 05. */
+class NotaDebitoRequest implements SolicitudComprobante
+{
+    /** Obligatorio. */
+    public ?string $origenReferencia = null;
+    /** Obligatorio. */
+    public ?string $referenciaExterna = null;
+    /** Obligatorio. */
+    public ?InfoTributaria $infoTributaria = null;
+    /** Obligatorio. */
+    public ?InfoNotaDebito $info = null;
+    /** @var Motivo[] Obligatorio. */
     public ?array $motivos = null;
-    /** @var Destinatario[] */
+    /** @var CampoAdicional[] */
+    public ?array $infoAdicional = null;
+
+    public function tipoComprobante(): TipoComprobante
+    {
+        return TipoComprobante::NotaDebito;
+    }
+}
+
+/** Guia de remision (`GuiaRemisionRequestDto`), tipo 06. */
+class GuiaRemisionRequest implements SolicitudComprobante
+{
+    /** Obligatorio. */
+    public ?string $origenReferencia = null;
+    /** Obligatorio. */
+    public ?string $referenciaExterna = null;
+    /** Obligatorio. */
+    public ?InfoTributaria $infoTributaria = null;
+    /** Obligatorio. */
+    public ?InfoGuiaRemision $info = null;
+    /** @var Destinatario[] Obligatorio. */
     public ?array $destinatarios = null;
-    /** @var DocsSustento[] */
+    /** @var CampoAdicional[] */
+    public ?array $infoAdicional = null;
+
+    public function tipoComprobante(): TipoComprobante
+    {
+        return TipoComprobante::GuiaRemision;
+    }
+}
+
+/** Comprobante de retencion (`ComprobanteRetencionRequestDto`), tipo 07. */
+class RetencionRequest implements SolicitudComprobante
+{
+    /** Obligatorio. */
+    public ?string $origenReferencia = null;
+    /** Obligatorio. */
+    public ?string $referenciaExterna = null;
+    /** Obligatorio. */
+    public ?InfoTributaria $infoTributaria = null;
+    /** Obligatorio. */
+    public ?InfoComprobanteRetencion $info = null;
+    /** @var DocsSustento[] Obligatorio. */
     public ?array $docsSustento = null;
     /** @var CampoAdicional[] */
     public ?array $infoAdicional = null;
+
+    public function tipoComprobante(): TipoComprobante
+    {
+        return TipoComprobante::Retencion;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -432,6 +614,144 @@ class Admission
 /** Estado de una operacion (`GET v1/operaciones/{idOperacion}`): misma forma que {@see Admission}. */
 class Operation extends Admission
 {
+}
+
+/** Fila del listado de comprobantes (`GET v1/operaciones`). */
+class Comprobante
+{
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
+    public ?string $claveAcceso = null;
+    /** `estab-ptoEmi-secuencial`, por ejemplo `001-001-000000123`. */
+    public ?string $numeroDocumento = null;
+    /** `01`, `03`, `04`, `05`, `06` o `07`. */
+    public ?string $tipoDocumento = null;
+    public ?string $fechaEmision = null;
+    public ?string $identificacionContraparte = null;
+    public ?string $razonSocialContraparte = null;
+    public ?float $total = null;
+    /** `recibido`, `autorizado`, `rechazado`, `rechazo_configuracion`, `error` o `cancelado`. */
+    public ?string $estado = null;
+    /** Codigo numerico de 4 digitos (ver {@see CodEstado}). */
+    public ?int $codEstado = null;
+    /** Descripcion general del codigo; null cuando no hay error (el API la omite). */
+    public ?string $msgError = null;
+    /** @var string[] Detalle especifico; vacio si no hay detalle. */
+    public ?array $errores = null;
+    public ?string $fhAutorizacion = null;
+
+    /** `estado` tipado; un valor nuevo del API se lee como EstadoOperacion::Desconocido. */
+    public function estadoOperacion(): EstadoOperacion
+    {
+        return EstadoOperacion::desdeValor($this->estado);
+    }
+
+    /** `tipoDocumento` tipado; null si el codigo no se reconoce. */
+    public function tipoComprobante(): ?TipoComprobante
+    {
+        return TipoComprobante::desdeValor($this->tipoDocumento);
+    }
+}
+
+/** Pagina del listado de comprobantes (`GET v1/operaciones`). */
+class PaginaComprobantes
+{
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
+    /** @var Comprobante[] */
+    public ?array $comprobantes = null;
+    public ?int $pagina = null;
+    public ?int $tamanoPagina = null;
+    /** True si existe una pagina siguiente. */
+    public ?bool $hayMas = null;
+}
+
+/** Destino de webhooks (`/v1/webhooks/destinos`). */
+class WebhookEndpoint
+{
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
+    public ?string $publicId = null;
+    public ?string $url = null;
+    /** Estado del destino (por ejemplo activo, pausado o deshabilitado). */
+    public ?string $state = null;
+    public ?int $fallosConsecutivos = null;
+    public ?string $ultimoFallo = null;
+    public ?string $creado = null;
+    /** @var string[] Tipos de evento suscritos (ver {@see TipoEventoWebhook}). */
+    public ?array $eventos = null;
+    /** RUC al que se limita el destino; null si recibe los eventos de todos tus RUC. */
+    public ?string $ruc = null;
+}
+
+/** Destino recien creado o con secreto rotado. `secretoUnaVez` solo se devuelve en esa respuesta. */
+class WebhookEndpointCreated
+{
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
+    public ?string $publicId = null;
+    public ?string $url = null;
+    /** Secreto de firma. Guardalo en tu gestor de secretos: no se vuelve a mostrar. */
+    public ?string $secretoUnaVez = null;
+    public ?string $ruc = null;
+
+    /** @return array<string, mixed> */
+    public function __debugInfo(): array
+    {
+        return ['publicId' => $this->publicId, 'url' => $this->url, 'secretoUnaVez' => '***', 'ruc' => $this->ruc];
+    }
+}
+
+/** Entrega de un evento a un destino. */
+class WebhookDelivery
+{
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
+    public ?string $publicId = null;
+    public ?string $eventId = null;
+    public ?int $intento = null;
+    public ?string $estado = null;
+    public ?string $programado = null;
+    public ?string $enviado = null;
+    public ?int $httpStatus = null;
+    public ?string $codigoError = null;
+    public ?string $tipoEvento = null;
+}
+
+/** Intento de entrega de un evento. */
+class WebhookDeliveryAttempt
+{
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
+    public ?int $intento = null;
+    public ?string $fecha = null;
+    public ?int $httpStatus = null;
+    public ?string $codigoError = null;
+    public ?int $duracionMs = null;
+    public ?string $resultado = null;
+}
+
+/** Cuerpo para crear un destino de webhooks. */
+class WebhookDestinoCrearRequest
+{
+    public ?string $url = null;
+    /** @var string[] Tipos de evento (ver {@see TipoEventoWebhook}). */
+    public ?array $eventos = null;
+    /** RUC al que limitas el destino; sin valor recibe los eventos de todos tus RUC. */
+    public ?string $ruc = null;
+}
+
+/** Cuerpo para reemplazar los eventos de un destino. */
+class WebhookDestinoEventosRequest
+{
+    /** @var string[] */
+    public ?array $eventos = null;
 }
 
 class QuotaBucket

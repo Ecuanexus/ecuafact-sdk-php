@@ -17,6 +17,8 @@ final class EmisionResultado
         public readonly Admission $admission,
         public readonly string $idempotencyKey,
         public readonly ?string $correlationId = null,
+        /** @var string[] Advertencias del /validar previo (solo con `validarAntesDeEmitir`); no bloquean. */
+        public readonly array $advertencias = [],
     ) {
     }
 }

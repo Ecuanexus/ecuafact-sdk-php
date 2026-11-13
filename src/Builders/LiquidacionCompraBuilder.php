@@ -5,17 +5,20 @@ declare(strict_types=1);
 namespace Ecuafact\Sdk\Builders;
 
 use Ecuafact\Sdk\Builders\Concerns\ConPagos;
-use Ecuafact\Sdk\Contracts\Detalle;
+use Ecuafact\Sdk\Contracts\DetalleCompraVenta;
+use Ecuafact\Sdk\Contracts\InfoLiquidacionCompra;
+use Ecuafact\Sdk\Contracts\LiquidacionCompraRequest;
 
-/** Liquidacion de compra (tipoDocumento 03). Crealo con `ComprobanteBuilder::liquidacionCompra()`. Sin propina. */
+/** Liquidacion de compra (`LiquidacionCompraRequest`, tipo 03). Crealo con `ComprobanteBuilder::liquidacionCompra()`. Sin propina. */
 final class LiquidacionCompraBuilder extends AbstractLineasBuilder
 {
     use ConPagos;
 
-    public function __construct(string $ruc, string $estab, string $ptoEmi, ?Precision $precision = null)
+    public function __construct(string $ruc, string $estab, string $ptoEmi)
     {
-        parent::__construct('03', $ruc, $estab, $ptoEmi, $precision ?? new Precision());
-        $this->comprobante->info->moneda = 'DOLAR';
+        $solicitud = new LiquidacionCompraRequest();
+        $solicitud->info = new InfoLiquidacionCompra();
+        parent::__construct($solicitud, $ruc, $estab, $ptoEmi);
     }
 
     /** `tipoIdentificacion`: 04 RUC, 05 cedula, 06 pasaporte u 08 exterior. */
@@ -47,14 +50,25 @@ final class LiquidacionCompraBuilder extends AbstractLineasBuilder
         return $this;
     }
 
-    protected function tipoDocumento(): string
+    /** Agrega una linea armada por ti; se envia tal cual. */
+    public function detalle(DetalleCompraVenta $detalle): static
     {
-        return '03';
+        $this->comprobante->detalles[] = $detalle;
+        return $this;
     }
 
-    protected function asignarCodigos(Detalle $detalle, string $codigo, ?string $codigoAuxiliar): void
+    public function construir(): LiquidacionCompraRequest
     {
+        /** @var LiquidacionCompraRequest $solicitud */
+        $solicitud = parent::construir();
+        return $solicitud;
+    }
+
+    protected function nuevoDetalle(string $codigo, ?string $codigoAuxiliar): DetalleCompraVenta
+    {
+        $detalle = new DetalleCompraVenta();
         $detalle->codigoPrincipal = $codigo;
         $detalle->codigoAuxiliar = $codigoAuxiliar;
+        return $detalle;
     }
 }

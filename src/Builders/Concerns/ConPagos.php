@@ -8,8 +8,7 @@ namespace Ecuafact\Sdk\Builders\Concerns;
 trait ConPagos
 {
     /**
-     * Agrega una forma de pago. Si dejas `total` en null y es el unico pago sin total,
-     * `calcularTotales()` le asigna lo que falta para el total del comprobante.
+     * Agrega una forma de pago. Si dejas `total` en null, no se envia y lo resuelve o rechaza el API.
      */
     public function pago(
         string $formaPago,

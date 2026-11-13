@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ecuafact\Sdk\Tests;
 
-use Ecuafact\Sdk\Contracts\ComprobanteRequest;
+use Ecuafact\Sdk\Contracts\FacturaRequest;
 use Ecuafact\Sdk\Contracts\InfoTributaria;
 use Ecuafact\Sdk\EcuafactClient;
 use Ecuafact\Sdk\EcuafactClientOptions;
@@ -40,11 +40,10 @@ final class OpcionesPorLlamadaTest extends TestCase
         ], $extra)));
     }
 
-    private function comprobante(): ComprobanteRequest
+    private function comprobante(): FacturaRequest
     {
-        $comprobante = new ComprobanteRequest();
+        $comprobante = new FacturaRequest();
         $comprobante->infoTributaria = new InfoTributaria();
-        $comprobante->infoTributaria->tipoDocumento = '01';
         return $comprobante;
     }
 

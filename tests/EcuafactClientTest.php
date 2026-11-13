@@ -6,7 +6,7 @@ namespace Ecuafact\Sdk\Tests;
 
 use Ecuafact\Sdk\Contracts\Admission;
 use Ecuafact\Sdk\Contracts\CodEstado;
-use Ecuafact\Sdk\Contracts\ComprobanteRequest;
+use Ecuafact\Sdk\Contracts\FacturaRequest;
 use Ecuafact\Sdk\Contracts\EstadoOperacion;
 use Ecuafact\Sdk\Contracts\InfoTributaria;
 use Ecuafact\Sdk\Contracts\Operation;
@@ -22,14 +22,13 @@ use PHPUnit\Framework\TestCase;
 
 final class EcuafactClientTest extends TestCase
 {
-    private function comprobante(): ComprobanteRequest
+    private function comprobante(): FacturaRequest
     {
-        $comprobante = new ComprobanteRequest();
+        $comprobante = new FacturaRequest();
         $comprobante->origenReferencia = 'MiERP';
         $comprobante->referenciaExterna = 'F-1';
         $comprobante->infoTributaria = new InfoTributaria();
         $comprobante->infoTributaria->ruc = '0123456789001';
-        $comprobante->infoTributaria->tipoDocumento = '01';
         $comprobante->infoTributaria->estab = '002';
         $comprobante->infoTributaria->ptoEmi = '001';
         $comprobante->infoTributaria->secuencial = '000000123';
@@ -90,7 +89,6 @@ final class EcuafactClientTest extends TestCase
         self::assertArrayNotHasKey('tipoDocumento', $cuerpo['infoTributaria']);
         self::assertArrayNotHasKey('codDoc', $cuerpo['infoTributaria']);
         self::assertArrayNotHasKey('info_tributaria', $cuerpo);
-        self::assertSame('01', $comprobante->infoTributaria->tipoDocumento);
     }
 
     public function testUsaLaKeyProvista(): void
@@ -358,7 +356,7 @@ final class EcuafactClientTest extends TestCase
         self::assertFalse(method_exists(\Ecuafact\Sdk\EcuafactContribuyente::class, 'listarRecibidos'));
     }
 
-    public function testListadoDeEmitidosRetirado(): void
+    public function testListadoDeEmitidosAnteriorRetirado(): void
     {
         self::assertFalse(method_exists(EcuafactClient::class, 'listarEmitidos'));
         self::assertFalse(method_exists(EcuafactClient::class, 'listarEmitidosEn'));
@@ -366,8 +364,6 @@ final class EcuafactClientTest extends TestCase
         self::assertFalse(method_exists(EcuafactClient::class, 'iterarEmitidosEn'));
         self::assertFalse(method_exists(\Ecuafact\Sdk\EcuafactContribuyente::class, 'listarEmitidos'));
         self::assertFalse(method_exists(\Ecuafact\Sdk\EcuafactContribuyente::class, 'iterarEmitidos'));
-        self::assertFalse(class_exists(\Ecuafact\Sdk\Contracts\PaginaComprobantes::class));
-        self::assertFalse(class_exists(\Ecuafact\Sdk\Contracts\Comprobante::class));
         self::assertFalse(class_exists(\Ecuafact\Sdk\ListadoRequest::class));
     }
 

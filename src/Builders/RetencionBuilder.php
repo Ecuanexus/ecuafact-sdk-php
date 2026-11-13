@@ -6,18 +6,22 @@ namespace Ecuafact\Sdk\Builders;
 
 use Ecuafact\Sdk\Contracts\DocsSustento;
 use Ecuafact\Sdk\Contracts\ImpuestoDocSustento;
+use Ecuafact\Sdk\Contracts\InfoComprobanteRetencion;
 use Ecuafact\Sdk\Contracts\RetencionLinea;
+use Ecuafact\Sdk\Contracts\RetencionRequest;
 use Ecuafact\Sdk\EcuafactSdkException;
 
 /**
- * Comprobante de retencion (tipoDocumento 07). Crealo con `ComprobanteBuilder::retencion()`. Lleva un solo
+ * Comprobante de retencion (`RetencionRequest`, tipo 07). Crealo con `ComprobanteBuilder::retencion()`. Lleva un solo
  * documento de sustento: llama a `docSustento()` antes de `impuestoSustento()`, `lineaRetencion()` y `pago()`.
  */
 final class RetencionBuilder extends AbstractComprobanteBuilder
 {
-    public function __construct(string $ruc, string $estab, string $ptoEmi, ?Precision $precision = null)
+    public function __construct(string $ruc, string $estab, string $ptoEmi)
     {
-        parent::__construct('07', $ruc, $estab, $ptoEmi, $precision ?? new Precision());
+        $solicitud = new RetencionRequest();
+        $solicitud->info = new InfoComprobanteRetencion();
+        parent::__construct($solicitud, $ruc, $estab, $ptoEmi);
     }
 
     public function fechaEmision(string|\DateTimeInterface $fecha): static
@@ -46,8 +50,8 @@ final class RetencionBuilder extends AbstractComprobanteBuilder
 
     /**
      * Define el documento de sustento (la factura del proveedor). `numDocSustento`: 15 digitos o
-     * `ddd-ddd-ddddddddd`. Con `calcularTotales()` se rellenan, si los dejas en null, `totalSinImpuestos`
-     * (suma de las bases de `impuestoSustento()`) e `importeTotal` (`totalSinImpuestos` + impuestos).
+     * `ddd-ddd-ddddddddd`. Los importes se envian tal cual; si los dejas en null no se envian. `pagoLocExt`
+     * tampoco tiene valor por defecto: se envia solo si lo indicas.
      */
     public function docSustento(
         string $codSustento,
@@ -58,7 +62,7 @@ final class RetencionBuilder extends AbstractComprobanteBuilder
         int|float|string|null $totalSinImpuestos = null,
         int|float|string|null $importeTotal = null,
         ?string $numAutDocSustento = null,
-        string $pagoLocExt = '01'
+        ?string $pagoLocExt = null
     ): static {
         $doc = new DocsSustento();
         $doc->codSustento = $codSustento;
@@ -74,7 +78,7 @@ final class RetencionBuilder extends AbstractComprobanteBuilder
         return $this;
     }
 
-    /** Impuesto de la factura del proveedor (`2` IVA, `3` ICE). `valorImpuesto` null: se calcula. */
+    /** Impuesto de la factura del proveedor (`2` IVA, `3` ICE). `valorImpuesto` null: no se envia. */
     public function impuestoSustento(
         string $codImpuesto,
         string $codigoPorcentaje,
@@ -92,7 +96,7 @@ final class RetencionBuilder extends AbstractComprobanteBuilder
         return $this;
     }
 
-    /** Retencion: `codigo` 1 renta, 2 IVA o 6 ISD. `valorRetenido` null: se calcula. */
+    /** Retencion: `codigo` 1 renta, 2 IVA o 6 ISD. `valorRetenido` null: no se envia. */
     public function lineaRetencion(
         string $codigo,
         string $codigoRetencion,
@@ -110,7 +114,7 @@ final class RetencionBuilder extends AbstractComprobanteBuilder
         return $this;
     }
 
-    /** Forma de pago de la factura del proveedor. Un unico pago sin total recibe lo que falta del `importeTotal`. */
+    /** Forma de pago de la factura del proveedor. */
     public function pago(
         string $formaPago,
         int|float|string|null $total = null,
@@ -121,9 +125,11 @@ final class RetencionBuilder extends AbstractComprobanteBuilder
         return $this;
     }
 
-    protected function tipoDocumento(): string
+    public function construir(): RetencionRequest
     {
-        return '07';
+        /** @var RetencionRequest $solicitud */
+        $solicitud = parent::construir();
+        return $solicitud;
     }
 
     private function doc(): DocsSustento

@@ -34,7 +34,7 @@ final class CodEstado
     public const CUERPO_EXCEDIDO = 3006;
     /** 400: "Version de API no admitida." */
     public const VERSION_NO_SOPORTADA = 3007;
-    /** 501: "Formato no admitido." */
+    /** 501: "Formato no admitido." Codigo historico: la emision ya no lo devuelve. */
     public const NO_IMPLEMENTADO = 3008;
     /** 401: "Credenciales invalidas." */
     public const CREDENCIALES_INVALIDAS = 3009;
