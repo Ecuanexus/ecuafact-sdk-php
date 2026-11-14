@@ -1,0 +1,5 @@
+# El paquete distribuido (zip de Packagist / git archive) no incluye pruebas ni archivos de desarrollo.
+/tests export-ignore
+/phpunit.xml export-ignore
+/.gitignore export-ignore
+/.gitattributes export-ignore

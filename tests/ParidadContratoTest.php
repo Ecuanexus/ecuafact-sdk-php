@@ -12,7 +12,6 @@ use Ecuafact\Sdk\Contracts\NotaCreditoRequest;
 use Ecuafact\Sdk\Contracts\NotaDebitoRequest;
 use Ecuafact\Sdk\Contracts\RetencionRequest;
 use Ecuafact\Sdk\Contracts\PerfilEmisorUpdate;
-use Ecuafact\Sdk\Contracts\WebhookDestinoCrearRequest;
 use Ecuafact\Sdk\EcuafactClient;
 use Ecuafact\Sdk\EcuafactClientOptions;
 use Ecuafact\Sdk\RequestOptions;
@@ -76,8 +75,6 @@ final class ParidadContratoTest extends TestCase
         'ImpuestoDocSustento' => ['ImpuestoDocSustentoDto'],
         'RetencionLinea' => ['RetencionLineaDto'],
         'PerfilEmisorUpdate' => ['PerfilEmisorUpdateDto'],
-        'WebhookDestinoCrearRequest' => ['WebhookDestinoCrearRequest'],
-        'WebhookDestinoEventosRequest' => ['WebhookDestinoEventosRequest'],
         // Respuesta.
         'Admission' => ['OperationDto'],
         'Operation' => ['OperationDto'],
@@ -88,10 +85,6 @@ final class ParidadContratoTest extends TestCase
         'PerfilEmisor' => ['PerfilEmisorDto'],
         'Comprobante' => ['ComprobanteDto'],
         'PaginaComprobantes' => ['PaginaComprobantesDto'],
-        'WebhookEndpoint' => ['WebhookEndpointDto'],
-        'WebhookEndpointCreated' => ['WebhookEndpointCreatedDto'],
-        'WebhookDelivery' => ['WebhookDeliveryDto'],
-        'WebhookDeliveryAttempt' => ['WebhookDeliveryAttemptDto'],
         'ContribuyenteConsulta' => ['ContribuyenteConsultaDto'],
         'BusquedaContribuyente' => ['BusquedaContribuyenteDto'],
         'RepresentanteLegalConsulta' => ['RepresentanteLegalDto'],
@@ -100,6 +93,13 @@ final class ParidadContratoTest extends TestCase
         'EstadoTributario' => ['EstadoTributarioDto'],
         'ValidacionIdentificacion' => ['ValidacionIdentificacionDto'],
         'ClaveAccesoDecodificada' => ['ClaveAccesoDecodificadaDto'],
+        'EstadoServicio' => ['EstadoPublicoDto'],
+        'ComponenteEstado' => ['ComponenteEstadoDto'],
+        'IncidentePublico' => ['IncidentePublicoDto'],
+        'Catalogos' => ['CatalogosDto'],
+        'CatalogoResumen' => ['CatalogoResumenDto'],
+        'CatalogoDetalle' => ['CatalogoDetalleDto'],
+        'CatalogoItem' => ['CatalogoItemDto'],
     ];
 
     /** Clase (con espacio de nombres corto) => espacio de nombres. */
@@ -181,6 +181,13 @@ final class ParidadContratoTest extends TestCase
             'EstadoPublico' => 'cadena validada por EstadoOperacion',
             'FiscalEnvironment' => 'int (ambiente)',
             'IFormFile' => 'multipart del logo: actualizarLogo(contenido, contentType)',
+            // Gestion de destinos de webhooks: no la ofrece el SDK por diseno (portal, CLI, MCP y API REST).
+            'WebhookEndpointDto' => 'gestion de destinos fuera del SDK',
+            'WebhookEndpointCreatedDto' => 'gestion de destinos fuera del SDK',
+            'WebhookDeliveryDto' => 'gestion de destinos fuera del SDK',
+            'WebhookDeliveryAttemptDto' => 'gestion de destinos fuera del SDK',
+            'WebhookDestinoCrearRequest' => 'gestion de destinos fuera del SDK',
+            'WebhookDestinoEventosRequest' => 'gestion de destinos fuera del SDK',
         ];
         $faltan = [];
         foreach (array_keys(self::$spec['components']['schemas']) as $nombre) {
@@ -272,13 +279,9 @@ final class ParidadContratoTest extends TestCase
             {
                 $this->peticiones[] = ['method' => $method, 'url' => $url, 'headers' => $headers, 'body' => $body];
                 $ruta = (string) parse_url($url, PHP_URL_PATH);
-                $lista = $method === 'GET' && (preg_match('#/(destinos|entregas|intentos)$#', $ruta) === 1
-                    || $ruta === '/v1/consultas/contribuyentes');
-                if ($method !== 'GET' && preg_match('#/(eventos|pausar|reanudar|deshabilitar|probar|reintentar)$#', $ruta) === 1) {
-                    return new TransportResponse(preg_match('#/(probar|reintentar)$#', $ruta) === 1 ? 202 : 204, '');
-                }
+                $lista = $method === 'GET' && $ruta === '/v1/consultas/contribuyentes';
                 return new TransportResponse(
-                    $ruta === '/v1/webhooks/destinos' && $method === 'POST' ? 201 : (str_contains($ruta, '/v1/contribuyentes/') && str_ends_with($ruta, 's') && $method === 'POST' && !str_contains($ruta, '/perfil') ? 202 : 200),
+                    str_contains($ruta, '/v1/contribuyentes/') && str_ends_with($ruta, 's') && $method === 'POST' && !str_contains($ruta, '/perfil') ? 202 : 200,
                     $lista ? '[]' : '{}',
                     ['Content-Type' => 'application/json']
                 );
@@ -310,13 +313,13 @@ final class ParidadContratoTest extends TestCase
             $c->infoTributaria = new InfoTributaria();
             return $c;
         };
-        $destino = new WebhookDestinoCrearRequest();
-        $destino->url = 'https://cliente.example/hook';
-        $destino->eventos = ['document.authorized'];
 
         // operationId => [closure, query esperada (nombres) si el SDK debe poder enviarlos todos].
         $llamadas = [
             'obtenerSalud' => static fn () => $cliente->obtenerSalud(),
+            'obtenerEstadoServicio' => static fn () => $cliente->obtenerEstadoServicio(),
+            'listarCatalogos' => static fn () => $cliente->listarCatalogos(),
+            'obtenerCatalogo' => static fn () => $cliente->obtenerCatalogo('tarifas-iva'),
             'obtenerContexto' => static fn () => $cliente->getContexto(),
             'consultarContribuyente' => static fn () => $cliente->consultarContribuyente($ruc, true, 'sri'),
             'buscarContribuyentes' => static fn () => $cliente->buscarContribuyentes('PEREZ', 'JUAN', 'A', 5),
@@ -343,22 +346,22 @@ final class ParidadContratoTest extends TestCase
             'validarNotaDebito' => static fn () => $cliente->validar($cr('05')),
             'validarGuiaRemision' => static fn () => $cliente->validar($cr('06')),
             'validarRetencion' => static fn () => $cliente->validar($cr('07')),
-            'listarDestinosWebhook' => static fn () => $cliente->listarWebhookDestinos(),
-            'crearDestinoWebhook' => static fn () => $cliente->crearWebhookDestino($destino),
-            'obtenerDestinoWebhook' => static fn () => $cliente->getWebhookDestino($uuid),
-            'actualizarEventosWebhook' => static fn () => $cliente->actualizarWebhookEventos($uuid, ['document.authorized']),
-            'rotarSecretoWebhook' => static fn () => $cliente->rotarWebhookSecreto($uuid),
-            'probarWebhook' => static fn () => $cliente->probarWebhookDestino($uuid),
-            'pausarWebhook' => static fn () => $cliente->pausarWebhookDestino($uuid),
-            'reanudarWebhook' => static fn () => $cliente->reanudarWebhookDestino($uuid),
-            'deshabilitarWebhook' => static fn () => $cliente->deshabilitarWebhookDestino($uuid),
-            'listarEntregasWebhook' => static fn () => $cliente->listarWebhookEntregas($uuid),
-            'listarIntentosEntregaWebhook' => static fn () => $cliente->listarWebhookIntentos($uuid, $entrega),
-            'reintentarEntregaWebhook' => static fn () => $cliente->reintentarWebhookEntrega($uuid, $entrega),
         ];
 
+        // Operaciones del contrato que el SDK NO cubre por diseno (decision del propietario, 2026-11-13): la
+        // administracion de destinos de webhooks se hace por portal, CLI, MCP y API REST. El SDK solo ayuda a
+        // RECIBIR webhooks (verificacion de firma, tipos de evento y payload). Cualquier otra operacion sin
+        // metodo hace fallar esta prueba.
+        $noCubiertas = [
+            'listarDestinosWebhook', 'crearDestinoWebhook', 'obtenerDestinoWebhook', 'actualizarEventosWebhook',
+            'rotarSecretoWebhook', 'probarWebhook', 'pausarWebhook', 'reanudarWebhook', 'deshabilitarWebhook',
+            'listarEntregasWebhook', 'listarIntentosEntregaWebhook', 'reintentarEntregaWebhook',
+        ];
+        $this->assertCount(12, $noCubiertas);
+        $this->assertSame([], array_diff($noCubiertas, array_keys($operaciones)), 'Una operacion excluida ya no existe en el contrato.');
+        $this->assertSame([], array_values(array_intersect($noCubiertas, array_keys($llamadas))), 'Una operacion excluida tiene metodo.');
         $this->assertEqualsCanonicalizing(
-            array_keys($operaciones),
+            array_values(array_diff(array_keys($operaciones), $noCubiertas)),
             array_keys($llamadas),
             'Operaciones del contrato sin metodo del SDK (o metodos de operaciones que ya no existen).'
         );
@@ -440,9 +443,7 @@ final class ParidadContratoTest extends TestCase
             'getContexto', 'consultarContribuyente', 'buscarContribuyentes', 'listarEstablecimientos',
             'validarIdentificacion', 'decodificarClaveAcceso', 'descargarRide', 'descargarXml', 'listarOperaciones',
             'getConsumo', 'getPerfil', 'actualizarPerfil', 'actualizarLogo', 'obtenerSalud',
-            'listarWebhookDestinos', 'crearWebhookDestino', 'getWebhookDestino', 'actualizarWebhookEventos',
-            'rotarWebhookSecreto', 'probarWebhookDestino', 'pausarWebhookDestino', 'reanudarWebhookDestino',
-            'deshabilitarWebhookDestino', 'listarWebhookEntregas', 'listarWebhookIntentos', 'reintentarWebhookEntrega',
+            'obtenerEstadoServicio', 'listarCatalogos', 'obtenerCatalogo',
         ];
         $desconocidos = [];
         foreach (['EcuafactClient', 'EcuafactContribuyente'] as $corta) {
@@ -608,7 +609,9 @@ final class ParidadContratoTest extends TestCase
             'string' => $nombres === ['string'],
             'boolean' => $nombres === ['bool'],
             'array' => $nombres === ['array'],
-            'object' => count($nombres) === 1 && !in_array($nombres[0], ['int', 'float', 'string', 'bool', 'array'], true),
+            'object' => $def['ref'] === null
+                ? $nombres === ['array']
+                : count($nombres) === 1 && !in_array($nombres[0], ['int', 'float', 'string', 'bool', 'array'], true),
             default => false,
         };
         if (!$ok) {
@@ -627,7 +630,7 @@ final class ParidadContratoTest extends TestCase
                 $diffs[] = "$donde: elemento de la lista, el contrato dice {$esperadoEl['kind']} y el SDK $elemento";
             }
         }
-        if ($esperado === 'object') {
+        if ($esperado === 'object' && $def['ref'] !== null) {
             $claseEsperada = $this->claseDeEsquema($def['ref']);
             if ($nombres[0] !== $claseEsperada) {
                 $diffs[] = "$donde: objeto anidado, el contrato dice {$def['ref']} y el SDK {$nombres[0]}";

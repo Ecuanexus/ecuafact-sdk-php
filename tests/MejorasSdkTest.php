@@ -867,14 +867,16 @@ final class MejorasSdkTest extends TestCase
     {
         $transport = new FakeTransport(
             new TransportResponse(200, 'pdf', ['Content-Type' => 'application/pdf']),
-            new TransportResponse(200, '<xml/>', ['Content-Type' => 'application/xml', 'X-Contenido' => 'provisional']),
+            new TransportResponse(200, '<xml/>', ['Content-Type' => 'application/xml']),
             new TransportResponse(200, '{"identificacion":"0123456789001","obligadoContabilidad":true}'),
             new TransportResponse(200, '{"identificacion":"0123456789001","ciudad":"Quito"}'),
             new TransportResponse(200, '{"identificacion":"0123456789001","logo":"l.png"}')
         );
         $vista = $this->cliente($transport)->para('0123456789');
         self::assertSame('application/pdf', $vista->descargarRide('CLAVE')->contentType);
-        self::assertTrue($vista->descargarXml('CLAVE')->provisional);
+        $xml = $vista->descargarXml('CLAVE');
+        self::assertSame('application/xml', $xml->contentType);
+        self::assertSame('<xml/>', $xml->contenido);
         self::assertTrue($vista->getPerfil()->obligadoContabilidad);
         $cambios = new PerfilEmisorUpdate();
         $cambios->ciudad = 'Quito';

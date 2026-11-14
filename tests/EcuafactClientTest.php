@@ -372,7 +372,6 @@ final class EcuafactClientTest extends TestCase
         self::assertFalse(method_exists(EcuafactClient::class, 'enviarCorreo'));
         self::assertFalse(method_exists(EcuafactClient::class, 'listarCatalogo'));
         self::assertFalse(method_exists(\Ecuafact\Sdk\EcuafactContribuyente::class, 'enviarCorreo'));
-        self::assertFalse(class_exists(\Ecuafact\Sdk\Contracts\CatalogoItem::class));
         self::assertFalse(class_exists(\Ecuafact\Sdk\Contracts\CorreoEnviado::class));
         self::assertFalse(class_exists(\Ecuafact\Sdk\Contracts\CorreoSolicitud::class));
     }

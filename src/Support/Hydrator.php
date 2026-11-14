@@ -122,6 +122,10 @@ final class Hydrator
         }
 
         if (in_array('array', $names, true)) {
+            if (is_object($value) && self::listElement($property) === null) {
+                // Objeto JSON libre (diccionario): queda como arreglo asociativo.
+                return self::aArreglo($value);
+            }
             if (!is_array($value)) {
                 return self::fail($class, $property);
             }

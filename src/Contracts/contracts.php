@@ -116,6 +116,7 @@ class DetalleNotaCredito
 /** Bien trasladado en una guia de remision (`DetalleGuiaDto`). */
 class DetalleGuia
 {
+    /** Obligatorio. */
     public ?string $codigoInterno = null;
     public ?string $codigoAdicional = null;
     /** Obligatorio. */
@@ -668,92 +669,6 @@ class PaginaComprobantes
     public ?bool $hayMas = null;
 }
 
-/** Destino de webhooks (`/v1/webhooks/destinos`). */
-class WebhookEndpoint
-{
-    /** @var array<string, mixed> Campos del API que este modelo no declara. */
-    public array $extra = [];
-
-    public ?string $publicId = null;
-    public ?string $url = null;
-    /** Estado del destino (por ejemplo activo, pausado o deshabilitado). */
-    public ?string $state = null;
-    public ?int $fallosConsecutivos = null;
-    public ?string $ultimoFallo = null;
-    public ?string $creado = null;
-    /** @var string[] Tipos de evento suscritos (ver {@see TipoEventoWebhook}). */
-    public ?array $eventos = null;
-    /** RUC al que se limita el destino; null si recibe los eventos de todos tus RUC. */
-    public ?string $ruc = null;
-}
-
-/** Destino recien creado o con secreto rotado. `secretoUnaVez` solo se devuelve en esa respuesta. */
-class WebhookEndpointCreated
-{
-    /** @var array<string, mixed> Campos del API que este modelo no declara. */
-    public array $extra = [];
-
-    public ?string $publicId = null;
-    public ?string $url = null;
-    /** Secreto de firma. Guardalo en tu gestor de secretos: no se vuelve a mostrar. */
-    public ?string $secretoUnaVez = null;
-    public ?string $ruc = null;
-
-    /** @return array<string, mixed> */
-    public function __debugInfo(): array
-    {
-        return ['publicId' => $this->publicId, 'url' => $this->url, 'secretoUnaVez' => '***', 'ruc' => $this->ruc];
-    }
-}
-
-/** Entrega de un evento a un destino. */
-class WebhookDelivery
-{
-    /** @var array<string, mixed> Campos del API que este modelo no declara. */
-    public array $extra = [];
-
-    public ?string $publicId = null;
-    public ?string $eventId = null;
-    public ?int $intento = null;
-    public ?string $estado = null;
-    public ?string $programado = null;
-    public ?string $enviado = null;
-    public ?int $httpStatus = null;
-    public ?string $codigoError = null;
-    public ?string $tipoEvento = null;
-}
-
-/** Intento de entrega de un evento. */
-class WebhookDeliveryAttempt
-{
-    /** @var array<string, mixed> Campos del API que este modelo no declara. */
-    public array $extra = [];
-
-    public ?int $intento = null;
-    public ?string $fecha = null;
-    public ?int $httpStatus = null;
-    public ?string $codigoError = null;
-    public ?int $duracionMs = null;
-    public ?string $resultado = null;
-}
-
-/** Cuerpo para crear un destino de webhooks. */
-class WebhookDestinoCrearRequest
-{
-    public ?string $url = null;
-    /** @var string[] Tipos de evento (ver {@see TipoEventoWebhook}). */
-    public ?array $eventos = null;
-    /** RUC al que limitas el destino; sin valor recibe los eventos de todos tus RUC. */
-    public ?string $ruc = null;
-}
-
-/** Cuerpo para reemplazar los eventos de un destino. */
-class WebhookDestinoEventosRequest
-{
-    /** @var string[] */
-    public ?array $eventos = null;
-}
-
 class QuotaBucket
 {
     /** @var array<string, mixed> Campos del API que este modelo no declara. */
@@ -770,13 +685,105 @@ class QuotaBucket
     public ?int $disponiblesExtra = null;
 }
 
+class EstadoServicio
+{
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
+    /** Estado general: `operativo`, `degradado`, `caido` o `sin_datos`. */
+    public ?string $estado = null;
+    /** Momento de la ultima medicion (ISO 8601); `null` si aun no hay mediciones. */
+    public ?string $medidoEn = null;
+    /** @var ComponenteEstado[] */
+    public ?array $componentes = null;
+    /** Porcentaje de minutos sin caida en los ultimos 90 dias; `null` si aun no hay muestras. */
+    public float|string|null $disponibilidad90Dias = null;
+    /** @var IncidentePublico[] */
+    public ?array $incidentes = null;
+}
+
+class ComponenteEstado
+{
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
+    public ?string $nombre = null;
+    /** `operativo`, `degradado`, `caido` o `sin_datos`. */
+    public ?string $estado = null;
+}
+
+class IncidentePublico
+{
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
+    /** Inicio del incidente (ISO 8601). */
+    public ?string $inicio = null;
+    /** Fin del incidente; `null` si sigue abierto. */
+    public ?string $fin = null;
+    /** `degradado` o `caido`. */
+    public ?string $impacto = null;
+    public ?string $titulo = null;
+    /** Que significa para tus integraciones; `null` si no hay. */
+    public ?string $detalle = null;
+}
+
+class Catalogos
+{
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
+    /** @var CatalogoResumen[] */
+    public ?array $catalogos = null;
+}
+
+class CatalogoResumen
+{
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
+    /** Clave del catalogo; es el valor que va en `obtenerCatalogo`. */
+    public ?string $nombre = null;
+    public ?string $descripcion = null;
+}
+
+class CatalogoDetalle
+{
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
+    public ?string $nombre = null;
+    public ?string $descripcion = null;
+    /** Tabla o anexo de la ficha tecnica del SRI de donde proviene. */
+    public ?string $fuente = null;
+    /** @var CatalogoItem[] */
+    public ?array $items = null;
+}
+
+class CatalogoItem
+{
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
+    /** Codigo tal como va en el comprobante. */
+    public ?string $codigo = null;
+    public ?string $descripcion = null;
+    /** Valor numerico asociado (por ejemplo la tarifa en porcentaje); `null` si el catalogo no lo tiene. */
+    public float|string|null $valor = null;
+    /** Primer dia de vigencia (`yyyy-MM-dd`); `null` si no esta acotada por el inicio. */
+    public ?string $vigenteDesde = null;
+    /** Ultimo dia de vigencia (`yyyy-MM-dd`); `null` si sigue vigente. */
+    public ?string $vigenteHasta = null;
+    /** @var array<string, mixed>|null Atributos propios del catalogo; `null` si no hay. */
+    public ?array $atributos = null;
+}
+
 class Contribuyente
 {
     /** @var array<string, mixed> Campos del API que este modelo no declara. */
     public array $extra = [];
 
     public ?string $identificacion = null;
-    public ?string $identificacionCompleta = null;
     public ?bool $puedeEmitir = null;
     public ?bool $puedeRecibir = null;
     /** @var string[] */
@@ -933,7 +940,6 @@ class ArchivoComprobante
 {
     public string $contenido = '';
     public string $contentType = '';
-    public bool $provisional = false;
 }
 
 class PerfilEmisor

@@ -8,10 +8,13 @@ use Ecuafact\Sdk\Contracts\ArchivoComprobante;
 use Ecuafact\Sdk\Contracts\Admission;
 use Ecuafact\Sdk\Contracts\BusquedaContribuyente;
 use Ecuafact\Sdk\Contracts\ClaveAccesoDecodificada;
+use Ecuafact\Sdk\Contracts\CatalogoDetalle;
+use Ecuafact\Sdk\Contracts\Catalogos;
 use Ecuafact\Sdk\Contracts\CodEstado;
 use Ecuafact\Sdk\Contracts\Contexto;
 use Ecuafact\Sdk\Contracts\ContribuyenteConsulta;
 use Ecuafact\Sdk\Contracts\EstablecimientosContribuyente;
+use Ecuafact\Sdk\Contracts\EstadoServicio;
 use Ecuafact\Sdk\Contracts\Operation;
 use Ecuafact\Sdk\Contracts\PaginaComprobantes;
 use Ecuafact\Sdk\Contracts\PerfilEmisor;
@@ -19,12 +22,6 @@ use Ecuafact\Sdk\Contracts\PerfilEmisorUpdate;
 use Ecuafact\Sdk\Contracts\QuotaBucket;
 use Ecuafact\Sdk\Contracts\SolicitudComprobante;
 use Ecuafact\Sdk\Contracts\ValidacionIdentificacion;
-use Ecuafact\Sdk\Contracts\WebhookDelivery;
-use Ecuafact\Sdk\Contracts\WebhookDeliveryAttempt;
-use Ecuafact\Sdk\Contracts\WebhookDestinoCrearRequest;
-use Ecuafact\Sdk\Contracts\WebhookDestinoEventosRequest;
-use Ecuafact\Sdk\Contracts\WebhookEndpoint;
-use Ecuafact\Sdk\Contracts\WebhookEndpointCreated;
 use Ecuafact\Sdk\Support\Hydrator;
 use Ecuafact\Sdk\Support\Serialization;
 use Ecuafact\Sdk\Transport\CurlTransport;
@@ -369,6 +366,59 @@ final class EcuafactClient
     }
 
     /**
+     * Consulta el estado publico del servicio (`GET /estado`): estado general, componentes, disponibilidad de los
+     * ultimos 90 dias e incidentes. No requiere API Key y no consume cupo.
+     *
+     * @throws EcuafactApiException|EcuafactSdkException
+     */
+    public function obtenerEstadoServicio(?RequestOptions $opciones = null): EstadoServicio
+    {
+        $headers = ['Accept: application/json', 'User-Agent: ' . $this->options->userAgent];
+        if ($opciones?->correlationId !== null) {
+            $headers[] = 'X-Correlation-Id: ' . $opciones->correlationId;
+        }
+        $response = $this->requestWithRetry('GET', $this->buildUrl('estado'), $headers, null, true, null, $opciones);
+        if ($response->status >= 400) {
+            throw $this->buildApiException($response, null, $opciones);
+        }
+        /** @var EstadoServicio $estado */
+        $estado = $this->parse($response->body, EstadoServicio::class);
+        return $estado;
+    }
+
+    /**
+     * Lista los catalogos del SRI (`GET v1/catalogos`): la clave de cada uno y una descripcion breve. Usa la clave
+     * en {@see obtenerCatalogo()}. No consume cupo.
+     *
+     * @throws EcuafactApiException|EcuafactSdkException
+     */
+    public function listarCatalogos(?RequestOptions $opciones = null): Catalogos
+    {
+        /** @var Catalogos $resultado */
+        $correlation = null;
+        $resultado = $this->send('GET', 'v1/catalogos', null, null, Catalogos::class, false, $correlation, $opciones);
+        return $resultado;
+    }
+
+    /**
+     * Obtiene el detalle de un catalogo del SRI (`GET v1/catalogos/{nombre}`), por ejemplo `tarifas-iva`. `$nombre`
+     * es la clave que devuelve {@see listarCatalogos()}. Si el catalogo no existe lanza
+     * {@see EcuafactNotFoundException}. No consume cupo.
+     *
+     * @throws EcuafactApiException|EcuafactSdkException
+     */
+    public function obtenerCatalogo(string $nombre, ?RequestOptions $opciones = null): CatalogoDetalle
+    {
+        if (trim($nombre) === '') {
+            throw new EcuafactSdkException('El nombre del catalogo es obligatorio.');
+        }
+        /** @var CatalogoDetalle $resultado */
+        $correlation = null;
+        $resultado = $this->send('GET', 'v1/catalogos/' . $this->segmento($nombre), null, null, CatalogoDetalle::class, false, $correlation, $opciones);
+        return $resultado;
+    }
+
+    /**
      * Lista una pagina de los comprobantes de un contribuyente (`GET v1/operaciones`; no consume cupo).
      * `$desde` y `$hasta` van en formato `yyyy-MM-dd`; `$tipoDocumento` acepta el codigo (`01`) o el nombre
      * (`factura`); `$buscar` filtra por numero, clave de acceso, contraparte o referencia; `$pagina` empieza
@@ -423,219 +473,6 @@ final class EcuafactClient
             $opciones
         );
         return $resultado;
-    }
-
-    /**
-     * Lista los destinos de webhooks de la integracion.
-     *
-     * @return WebhookEndpoint[]
-     * @throws EcuafactApiException|EcuafactSdkException
-     */
-    public function listarWebhookDestinos(?RequestOptions $opciones = null): array
-    {
-        $correlation = null;
-        /** @var WebhookEndpoint[] $resultado */
-        $resultado = $this->send('GET', 'v1/webhooks/destinos', null, null, WebhookEndpoint::class, true, $correlation, $opciones);
-        return $resultado;
-    }
-
-    /**
-     * Crea un destino de webhooks. La respuesta trae el secreto de firma (`secretoUnaVez`) una sola vez.
-     * No se reintenta automaticamente.
-     *
-     * @throws EcuafactApiException|EcuafactSdkException
-     */
-    public function crearWebhookDestino(
-        WebhookDestinoCrearRequest $destino,
-        ?RequestOptions $opciones = null
-    ): WebhookEndpointCreated {
-        if ($destino->url === null || trim($destino->url) === '') {
-            throw new EcuafactSdkException('La url del destino es obligatoria.');
-        }
-        if ($destino->eventos === null || $destino->eventos === []) {
-            throw new EcuafactSdkException('Indica al menos un evento.');
-        }
-        $correlation = null;
-        /** @var WebhookEndpointCreated $resultado */
-        $resultado = $this->send(
-            'POST',
-            'v1/webhooks/destinos',
-            $destino,
-            null,
-            WebhookEndpointCreated::class,
-            false,
-            $correlation,
-            $opciones
-        );
-        return $resultado;
-    }
-
-    /**
-     * Consulta un destino de webhooks. `$id` es el `publicId` del destino (UUID).
-     *
-     * @throws EcuafactApiException|EcuafactSdkException
-     */
-    public function getWebhookDestino(string $id, ?RequestOptions $opciones = null): WebhookEndpoint
-    {
-        $correlation = null;
-        /** @var WebhookEndpoint $resultado */
-        $resultado = $this->send('GET', $this->rutaWebhook($id), null, null, WebhookEndpoint::class, false, $correlation, $opciones);
-        return $resultado;
-    }
-
-    /**
-     * Reemplaza los eventos de un destino (204).
-     *
-     * @param string[] $eventos Tipos de evento, por ejemplo `document.authorized`.
-     * @throws EcuafactApiException|EcuafactSdkException
-     */
-    public function actualizarWebhookEventos(string $id, array $eventos, ?RequestOptions $opciones = null): void
-    {
-        if ($eventos === []) {
-            throw new EcuafactSdkException('Indica al menos un evento.');
-        }
-        $cuerpo = new WebhookDestinoEventosRequest();
-        $cuerpo->eventos = array_values($eventos);
-        $this->sendSinContenido('PUT', $this->rutaWebhook($id) . '/eventos', $cuerpo, $opciones);
-    }
-
-    /**
-     * Rota el secreto de firma del destino. La respuesta trae el secreto nuevo (`secretoUnaVez`) una sola vez.
-     *
-     * @throws EcuafactApiException|EcuafactSdkException
-     */
-    public function rotarWebhookSecreto(string $id, ?RequestOptions $opciones = null): WebhookEndpointCreated
-    {
-        $correlation = null;
-        /** @var WebhookEndpointCreated $resultado */
-        $resultado = $this->send(
-            'POST',
-            $this->rutaWebhook($id) . '/rotar-secreto',
-            null,
-            null,
-            WebhookEndpointCreated::class,
-            false,
-            $correlation,
-            $opciones
-        );
-        return $resultado;
-    }
-
-    /**
-     * Envia un evento de prueba al destino (202).
-     *
-     * @throws EcuafactApiException|EcuafactSdkException
-     */
-    public function probarWebhookDestino(string $id, ?RequestOptions $opciones = null): void
-    {
-        $this->sendSinContenido('POST', $this->rutaWebhook($id) . '/probar', null, $opciones);
-    }
-
-    /**
-     * Pausa las entregas del destino (204).
-     *
-     * @throws EcuafactApiException|EcuafactSdkException
-     */
-    public function pausarWebhookDestino(string $id, ?RequestOptions $opciones = null): void
-    {
-        $this->sendSinContenido('POST', $this->rutaWebhook($id) . '/pausar', null, $opciones);
-    }
-
-    /**
-     * Reanuda las entregas de un destino pausado (204).
-     *
-     * @throws EcuafactApiException|EcuafactSdkException
-     */
-    public function reanudarWebhookDestino(string $id, ?RequestOptions $opciones = null): void
-    {
-        $this->sendSinContenido('POST', $this->rutaWebhook($id) . '/reanudar', null, $opciones);
-    }
-
-    /**
-     * Deshabilita el destino (204).
-     *
-     * @throws EcuafactApiException|EcuafactSdkException
-     */
-    public function deshabilitarWebhookDestino(string $id, ?RequestOptions $opciones = null): void
-    {
-        $this->sendSinContenido('POST', $this->rutaWebhook($id) . '/deshabilitar', null, $opciones);
-    }
-
-    /**
-     * Lista las entregas de un destino.
-     *
-     * @return WebhookDelivery[]
-     * @throws EcuafactApiException|EcuafactSdkException
-     */
-    public function listarWebhookEntregas(string $id, ?RequestOptions $opciones = null): array
-    {
-        $correlation = null;
-        /** @var WebhookDelivery[] $resultado */
-        $resultado = $this->send(
-            'GET',
-            $this->rutaWebhook($id) . '/entregas',
-            null,
-            null,
-            WebhookDelivery::class,
-            true,
-            $correlation,
-            $opciones
-        );
-        return $resultado;
-    }
-
-    /**
-     * Lista los intentos de una entrega. `$entregaId` es el `publicId` de la entrega.
-     *
-     * @return WebhookDeliveryAttempt[]
-     * @throws EcuafactApiException|EcuafactSdkException
-     */
-    public function listarWebhookIntentos(string $id, string $entregaId, ?RequestOptions $opciones = null): array
-    {
-        $ruta = $this->rutaWebhook($id);
-        $this->validateUuid($entregaId, 'entregaId');
-        $correlation = null;
-        /** @var WebhookDeliveryAttempt[] $resultado */
-        $resultado = $this->send(
-            'GET',
-            $ruta . '/entregas/' . $entregaId . '/intentos',
-            null,
-            null,
-            WebhookDeliveryAttempt::class,
-            true,
-            $correlation,
-            $opciones
-        );
-        return $resultado;
-    }
-
-    /**
-     * Reencola una entrega fallida o rechazada (202). `$eventoId` es el `eventId` de la entrega.
-     *
-     * @throws EcuafactApiException|EcuafactSdkException
-     */
-    public function reintentarWebhookEntrega(string $id, string $eventoId, ?RequestOptions $opciones = null): void
-    {
-        $ruta = $this->rutaWebhook($id);
-        $this->validateUuid($eventoId, 'eventoId');
-        $this->sendSinContenido('POST', $ruta . '/entregas/' . $eventoId . '/reintentar', null, $opciones);
-    }
-
-    private function rutaWebhook(string $id): string
-    {
-        $this->validateUuid($id, 'id');
-        return 'v1/webhooks/destinos/' . $id;
-    }
-
-    /** Llamada cuya respuesta exitosa no trae cuerpo (202 o 204). No se reintenta. */
-    private function sendSinContenido(string $method, string $path, ?object $body, ?RequestOptions $opciones): void
-    {
-        $json = $body !== null ? Serialization::encode($body) : null;
-        $headers = $this->buildJsonHeaders($json !== null ? 'application/json; charset=utf-8' : null, null, $opciones);
-        $response = $this->requestWithRetry($method, $this->buildUrl($path), $headers, $json, false, null, $opciones);
-        if ($response->status >= 400) {
-            throw $this->buildApiException($response, null, $opciones);
-        }
     }
 
     public function consultarContribuyente(
@@ -758,8 +595,6 @@ final class EcuafactClient
         $archivo->contenido = $response->body;
         $tipo = $response->header('Content-Type');
         $archivo->contentType = $tipo !== null && $tipo !== '' ? explode(';', $tipo)[0] : 'application/octet-stream';
-        $marca = $response->header('X-Contenido');
-        $archivo->provisional = $marca !== null && strcasecmp($marca, 'provisional') === 0;
         return $archivo;
     }
 
@@ -808,7 +643,22 @@ final class EcuafactClient
             throw $this->buildApiException($response, $idempotencyKey, $opciones);
         }
         $correlationId = $response->header('X-Correlation-Id') ?? $opciones?->correlationId;
-        return $this->parse($response->body, $modelClass, $list);
+        try {
+            return $this->parse($response->body, $modelClass, $list);
+        } catch (EcuafactSdkException $error) {
+            $detalle = $idempotencyKey !== null
+                ? ' La solicitud pudo haberse registrado: repite la llamada con la misma Idempotency-Key (' . $idempotencyKey
+                    . ') o consulta el resultado; no emitas de nuevo con otra clave.'
+                : '';
+            throw new EcuafactInvalidResponseException(
+                'El API respondio HTTP ' . $response->status . ' con un cuerpo que no se pudo leer (' . $error->getMessage() . ').'
+                    . $detalle . ($correlationId !== null ? ' X-Correlation-Id: ' . $correlationId . '.' : ''),
+                $response->status,
+                $idempotencyKey,
+                $correlationId,
+                $error
+            );
+        }
     }
 
     /** @return string[] */

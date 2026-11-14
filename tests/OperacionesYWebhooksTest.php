@@ -8,7 +8,6 @@ use Ecuafact\Sdk\Contracts\FacturaRequest;
 use Ecuafact\Sdk\Contracts\EstadoOperacion;
 use Ecuafact\Sdk\Contracts\InfoTributaria;
 use Ecuafact\Sdk\Contracts\TipoComprobante;
-use Ecuafact\Sdk\Contracts\WebhookDestinoCrearRequest;
 use Ecuafact\Sdk\EcuafactAuthException;
 use Ecuafact\Sdk\EcuafactClient;
 use Ecuafact\Sdk\EcuafactClientOptions;
@@ -22,7 +21,6 @@ use PHPUnit\Framework\TestCase;
 final class OperacionesYWebhooksTest extends TestCase
 {
     private const ID = '3f2b8c1e-7a4d-4e2b-9c11-5d6f7a8b9c0d';
-    private const ENTREGA = '0a1b2c3d-1111-4222-8333-444455556666';
 
     private function cliente(FakeTransport $transport): EcuafactClient
     {
@@ -141,187 +139,106 @@ final class OperacionesYWebhooksTest extends TestCase
         $this->cliente($transport)->obtenerSalud(new \Ecuafact\Sdk\RequestOptions(reintentos: false));
     }
 
-    public function testListarYObtenerDestinos(): void
+    public function testObtenerEstadoServicioNoEnviaApiKeyYLeeTodosLosCampos(): void
     {
-        $destino = [
-            'publicId' => self::ID,
-            'url' => 'https://miempresa.com/webhooks',
-            'state' => 'activo',
-            'fallosConsecutivos' => 0,
-            'ultimoFallo' => null,
-            'creado' => '2026-11-12T10:00:00Z',
-            'eventos' => ['document.authorized'],
-            'ruc' => null,
-        ];
-        $transport = new FakeTransport(
-            new TransportResponse(200, json_encode([$destino], JSON_THROW_ON_ERROR)),
-            new TransportResponse(200, json_encode($destino, JSON_THROW_ON_ERROR)),
-        );
+        $transport = new FakeTransport(new TransportResponse(200, json_encode([
+            'estado' => 'degradado',
+            'medidoEn' => '2026-11-13T10:00:00Z',
+            'componentes' => [['nombre' => 'API', 'estado' => 'operativo'], ['nombre' => 'SRI', 'estado' => 'degradado']],
+            'disponibilidad90Dias' => 99.95,
+            'incidentes' => [[
+                'inicio' => '2026-11-12T08:00:00Z', 'fin' => null, 'impacto' => 'degradado',
+                'titulo' => 'Demora del SRI', 'detalle' => 'Las autorizaciones tardan mas.',
+            ]],
+        ])));
+        $estado = $this->cliente($transport)->obtenerEstadoServicio();
+        self::assertSame('https://api.example/estado', $transport->peticiones[0]['url']);
+        self::assertNull($transport->header(0, 'X-Api-Key'));
+        self::assertSame('degradado', $estado->estado);
+        self::assertSame('2026-11-13T10:00:00Z', $estado->medidoEn);
+        self::assertSame(99.95, $estado->disponibilidad90Dias);
+        self::assertCount(2, $estado->componentes);
+        self::assertSame('SRI', $estado->componentes[1]->nombre);
+        self::assertSame('degradado', $estado->componentes[1]->estado);
+        self::assertSame('Demora del SRI', $estado->incidentes[0]->titulo);
+        self::assertSame('degradado', $estado->incidentes[0]->impacto);
+        self::assertSame('2026-11-12T08:00:00Z', $estado->incidentes[0]->inicio);
+        self::assertNull($estado->incidentes[0]->fin);
+        self::assertSame('Las autorizaciones tardan mas.', $estado->incidentes[0]->detalle);
+    }
+
+    public function testObtenerEstadoServicioAdmiteNulos(): void
+    {
+        $transport = new FakeTransport(new TransportResponse(200, '{"estado":"sin_datos","medidoEn":null,"componentes":[],"disponibilidad90Dias":null,"incidentes":[]}'));
+        $estado = $this->cliente($transport)->obtenerEstadoServicio();
+        self::assertSame('sin_datos', $estado->estado);
+        self::assertNull($estado->medidoEn);
+        self::assertNull($estado->disponibilidad90Dias);
+        self::assertSame([], $estado->componentes);
+    }
+
+    public function testObtenerEstadoServicioLanzaConError(): void
+    {
+        $transport = new FakeTransport(new TransportResponse(503, '{"estado":"error","codEstado":5003,"errores":[]}'));
+        $this->expectException(\Ecuafact\Sdk\EcuafactServerException::class);
+        $this->cliente($transport)->obtenerEstadoServicio(new \Ecuafact\Sdk\RequestOptions(reintentos: false));
+    }
+
+    public function testListarCatalogosLeeElIndice(): void
+    {
+        $transport = new FakeTransport(new TransportResponse(200, '{"catalogos":[{"nombre":"tarifas-iva","descripcion":"Tarifas de IVA"},{"nombre":"formas-pago","descripcion":"Formas de pago"}]}'));
+        $indice = $this->cliente($transport)->listarCatalogos();
+        self::assertSame('https://api.example/v1/catalogos', $transport->peticiones[0]['url']);
+        self::assertSame('clave.secreta', $transport->header(0, 'X-Api-Key'));
+        self::assertCount(2, $indice->catalogos);
+        self::assertSame('tarifas-iva', $indice->catalogos[0]->nombre);
+        self::assertSame('Formas de pago', $indice->catalogos[1]->descripcion);
+    }
+
+    public function testObtenerCatalogoLeeTodosLosCampos(): void
+    {
+        $transport = new FakeTransport(new TransportResponse(200, json_encode([
+            'nombre' => 'tarifas-iva', 'descripcion' => 'Tarifas de IVA', 'fuente' => 'Tabla 17',
+            'items' => [
+                ['codigo' => '4', 'descripcion' => 'IVA 15%', 'valor' => 15.0, 'vigenteDesde' => '2024-04-01', 'vigenteHasta' => null, 'atributos' => ['grupo' => 'general']],
+                ['codigo' => '0', 'descripcion' => 'IVA 0%', 'valor' => null, 'vigenteDesde' => null, 'vigenteHasta' => '2026-12-31', 'atributos' => null],
+            ],
+        ])));
+        $detalle = $this->cliente($transport)->obtenerCatalogo('tarifas-iva');
+        self::assertSame('https://api.example/v1/catalogos/tarifas-iva', $transport->peticiones[0]['url']);
+        self::assertSame('tarifas-iva', $detalle->nombre);
+        self::assertSame('Tarifas de IVA', $detalle->descripcion);
+        self::assertSame('Tabla 17', $detalle->fuente);
+        self::assertCount(2, $detalle->items);
+        $a = $detalle->items[0];
+        self::assertSame('4', $a->codigo);
+        self::assertSame('IVA 15%', $a->descripcion);
+        self::assertSame(15.0, $a->valor);
+        self::assertSame('2024-04-01', $a->vigenteDesde);
+        self::assertNull($a->vigenteHasta);
+        self::assertSame(['grupo' => 'general'], $a->atributos);
+        $b = $detalle->items[1];
+        self::assertNull($b->valor);
+        self::assertNull($b->vigenteDesde);
+        self::assertSame('2026-12-31', $b->vigenteHasta);
+        self::assertNull($b->atributos);
+    }
+
+    public function testObtenerCatalogoInexistenteLanzaNoEncontrado(): void
+    {
+        $transport = new FakeTransport(new TransportResponse(404, '{"estado":"error","codEstado":4004,"msgError":"Catalogo no encontrado","errores":[]}'));
+        $this->expectException(EcuafactNotFoundException::class);
+        $this->cliente($transport)->obtenerCatalogo('no-existe', new \Ecuafact\Sdk\RequestOptions(reintentos: false));
+    }
+
+    public function testObtenerCatalogoValidaYCodificaElNombre(): void
+    {
+        $transport = new FakeTransport(new TransportResponse(200, '{"nombre":"a b","items":[]}'));
         $cliente = $this->cliente($transport);
-        $lista = $cliente->listarWebhookDestinos();
-        self::assertSame('https://api.example/v1/webhooks/destinos', $transport->peticiones[0]['url']);
-        self::assertCount(1, $lista);
-        self::assertSame(self::ID, $lista[0]->publicId);
-        self::assertSame(['document.authorized'], $lista[0]->eventos);
-
-        $uno = $cliente->getWebhookDestino(self::ID);
-        self::assertSame('https://api.example/v1/webhooks/destinos/' . self::ID, $transport->peticiones[1]['url']);
-        self::assertSame('activo', $uno->state);
-    }
-
-    public function testCrearDestinoEnviaCuerpoYLeeElSecreto(): void
-    {
-        $transport = new FakeTransport(new TransportResponse(
-            201,
-            '{"publicId":"' . self::ID . '","url":"https://miempresa.com/webhooks","secretoUnaVez":"whsec_abc","ruc":"0123456789001"}'
-        ));
-        $solicitud = new WebhookDestinoCrearRequest();
-        $solicitud->url = 'https://miempresa.com/webhooks';
-        $solicitud->eventos = ['document.authorized', 'document.rejected'];
-        $solicitud->ruc = '0123456789001';
-        $creado = $this->cliente($transport)->crearWebhookDestino($solicitud);
-
-        self::assertSame('POST', $transport->peticiones[0]['method']);
-        self::assertSame(
-            '{"url":"https://miempresa.com/webhooks","eventos":["document.authorized","document.rejected"],"ruc":"0123456789001"}',
-            $transport->peticiones[0]['body']
-        );
-        self::assertNull($transport->header(0, 'Idempotency-Key'));
-        self::assertSame('whsec_abc', $creado->secretoUnaVez);
-        self::assertStringNotContainsString('whsec_abc', print_r($creado, true));
-    }
-
-    public function testCrearDestinoExigeUrlYEventos(): void
-    {
-        $transport = new FakeTransport(new TransportResponse(201, '{}'));
-        $cliente = $this->cliente($transport);
-        $sinUrl = new WebhookDestinoCrearRequest();
-        $sinUrl->eventos = ['document.authorized'];
-        $sinEventos = new WebhookDestinoCrearRequest();
-        $sinEventos->url = 'https://miempresa.com/webhooks';
-        foreach ([$sinUrl, $sinEventos] as $solicitud) {
-            try {
-                $cliente->crearWebhookDestino($solicitud);
-                self::fail('Se esperaba EcuafactSdkException.');
-            } catch (EcuafactSdkException) {
-                self::assertSame([], $transport->peticiones);
-            }
-        }
-    }
-
-    public function testAccionesSobreUnDestinoUsanVerboYRuta(): void
-    {
-        $transport = new FakeTransport(
-            new TransportResponse(204, ''),
-            new TransportResponse(200, '{"publicId":"' . self::ID . '","url":"https://x.test","secretoUnaVez":"whsec_nuevo"}'),
-            new TransportResponse(202, ''),
-            new TransportResponse(204, ''),
-            new TransportResponse(204, ''),
-            new TransportResponse(204, ''),
-            new TransportResponse(202, ''),
-        );
-        $cliente = $this->cliente($transport);
-        $cliente->actualizarWebhookEventos(self::ID, ['document.authorized', 'document.rejected']);
-        $rotado = $cliente->rotarWebhookSecreto(self::ID);
-        $cliente->probarWebhookDestino(self::ID);
-        $cliente->pausarWebhookDestino(self::ID);
-        $cliente->reanudarWebhookDestino(self::ID);
-        $cliente->deshabilitarWebhookDestino(self::ID);
-        $cliente->reintentarWebhookEntrega(self::ID, self::ENTREGA);
-
-        $base = 'https://api.example/v1/webhooks/destinos/' . self::ID;
-        $esperado = [
-            ['PUT', $base . '/eventos'],
-            ['POST', $base . '/rotar-secreto'],
-            ['POST', $base . '/probar'],
-            ['POST', $base . '/pausar'],
-            ['POST', $base . '/reanudar'],
-            ['POST', $base . '/deshabilitar'],
-            ['POST', $base . '/entregas/' . self::ENTREGA . '/reintentar'],
-        ];
-        foreach ($esperado as $i => [$metodo, $url]) {
-            self::assertSame($metodo, $transport->peticiones[$i]['method']);
-            self::assertSame($url, $transport->peticiones[$i]['url']);
-        }
-        self::assertSame('{"eventos":["document.authorized","document.rejected"]}', $transport->peticiones[0]['body']);
-        self::assertSame('whsec_nuevo', $rotado->secretoUnaVez);
-    }
-
-    public function testEntregasEIntentos(): void
-    {
-        $transport = new FakeTransport(
-            new TransportResponse(200, json_encode([[
-                'publicId' => self::ENTREGA,
-                'eventId' => '9f9f9f9f-1111-4222-8333-444455556666',
-                'intento' => 2,
-                'estado' => 'fallida',
-                'programado' => '2026-11-12T10:00:00Z',
-                'enviado' => null,
-                'httpStatus' => 500,
-                'codigoError' => null,
-                'tipoEvento' => 'document.authorized',
-            ]], JSON_THROW_ON_ERROR)),
-            new TransportResponse(200, json_encode([[
-                'intento' => 1,
-                'fecha' => '2026-11-12T10:00:00Z',
-                'httpStatus' => 500,
-                'codigoError' => null,
-                'duracionMs' => 120,
-                'resultado' => 'fallido',
-            ]], JSON_THROW_ON_ERROR)),
-        );
-        $cliente = $this->cliente($transport);
-        $entregas = $cliente->listarWebhookEntregas(self::ID);
-        self::assertSame(self::ENTREGA, $entregas[0]->publicId);
-        self::assertSame(500, $entregas[0]->httpStatus);
-        self::assertSame('document.authorized', $entregas[0]->tipoEvento);
-        $intentos = $cliente->listarWebhookIntentos(self::ID, self::ENTREGA);
-        self::assertSame(
-            'https://api.example/v1/webhooks/destinos/' . self::ID . '/entregas/' . self::ENTREGA . '/intentos',
-            $transport->peticiones[1]['url']
-        );
-        self::assertSame(120, $intentos[0]->duracionMs);
-    }
-
-    public function testIdsDeWebhookDebenSerUuid(): void
-    {
-        $transport = new FakeTransport(new TransportResponse(204, ''));
-        $cliente = $this->cliente($transport);
-        foreach ([
-            fn () => $cliente->getWebhookDestino('no-es-uuid'),
-            fn () => $cliente->listarWebhookIntentos(self::ID, '../x'),
-            fn () => $cliente->reintentarWebhookEntrega(self::ID, 'x'),
-            fn () => $cliente->actualizarWebhookEventos(self::ID, []),
-        ] as $llamada) {
-            try {
-                $llamada();
-                self::fail('Se esperaba EcuafactSdkException.');
-            } catch (EcuafactSdkException) {
-                self::assertSame([], $transport->peticiones);
-            }
-        }
-    }
-
-    public function testErroresDeWebhookUsanLasExcepcionesDelContrato(): void
-    {
-        $casos = [
-            [404, 3013, EcuafactNotFoundException::class],
-            [422, 3002, EcuafactValidationException::class],
-            [415, 3003, EcuafactValidationException::class],
-            [413, 3006, EcuafactValidationException::class],
-        ];
-        foreach ($casos as [$status, $cod, $clase]) {
-            $transport = new FakeTransport(new TransportResponse(
-                $status,
-                '{"estado":"rechazado","codEstado":' . $cod . ',"msgError":"m","errores":[]}'
-            ));
-            try {
-                $this->cliente($transport)->pausarWebhookDestino(self::ID);
-                self::fail('Se esperaba ' . $clase);
-            } catch (\Ecuafact\Sdk\EcuafactApiException $error) {
-                self::assertSame($clase, $error::class, 'HTTP ' . $status);
-            }
-        }
+        $cliente->obtenerCatalogo('a b');
+        self::assertSame('https://api.example/v1/catalogos/a%20b', $transport->peticiones[0]['url']);
+        $this->expectException(EcuafactSdkException::class);
+        $cliente->obtenerCatalogo(' ');
     }
 
     public function testValidarExponeAdvertencias(): void

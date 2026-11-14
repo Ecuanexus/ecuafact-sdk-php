@@ -1,18 +1,16 @@
 # ecuafact/sdk (PHP)
 
 Cliente oficial en PHP del API publico de facturacion electronica Ecuafact (contrato v1). Cubre
-autenticacion, idempotencia, reintentos configurables, espera del resultado, logo del perfil y firma de
-webhooks. Compatible con PHP 8.2+.
+autenticacion, idempotencia, reintentos configurables, espera del resultado, logo del perfil y verificacion de la firma de los
+webhooks que recibes. Compatible con PHP 8.2+.
 
-Versión preliminar actual: `v1.0.0-beta8`.
+Versión actual: `v1.0.0`.
 
 ## Instalacion
 
 ```bash
-composer require "ecuafact/sdk:^1.0@beta"
+composer require "ecuafact/sdk:^1.0"
 ```
-
-El SDK esta en version preliminar: sin `@beta`, Composer busca una version estable y no la encuentra.
 
 ## Requisitos
 
@@ -88,6 +86,12 @@ La vista expone `emitir`, `validar`, `descargarRide`, `descargarXml`, `getPerfil
 `buscar`, `pagina` desde 1 y `tamanoPagina` de 1 a 100. `obtenerSalud()` llama a `GET /salud` (sin API Key) y devuelve
 `true`; con una respuesta que no es 2xx lanza la excepcion que corresponde.
 
+`obtenerEstadoServicio()` (`GET /estado`, sin API Key) devuelve un `EstadoServicio` con `estado`, `medidoEn`,
+`componentes`, `disponibilidad90Dias` e `incidentes`. `listarCatalogos()` (`GET /v1/catalogos`) devuelve un `Catalogos` con
+la clave y la descripcion de cada catalogo, y `obtenerCatalogo('tarifas-iva')` (`GET /v1/catalogos/{nombre}`) devuelve un
+`CatalogoDetalle` con sus `items` (`codigo`, `descripcion`, `valor`, `vigenteDesde`, `vigenteHasta`, `atributos`); un
+catalogo inexistente lanza `EcuafactNotFoundException`.
+
 ```php
 $pagina = 1;
 do {
@@ -101,21 +105,9 @@ do {
 
 ## Destinos de webhooks
 
-Administra los destinos desde el SDK: `listarWebhookDestinos`, `crearWebhookDestino`, `getWebhookDestino`,
-`actualizarWebhookEventos`, `rotarWebhookSecreto`, `probarWebhookDestino`, `pausarWebhookDestino`,
-`reanudarWebhookDestino`, `deshabilitarWebhookDestino`, `listarWebhookEntregas`, `listarWebhookIntentos` y
-`reintentarWebhookEntrega`. Los identificadores son UUID. El secreto de firma (`secretoUnaVez`) llega solo al crear el
-destino o al rotar el secreto: guardalo en ese momento. Estos metodos no se reintentan automaticamente.
-
-```php
-use Ecuafact\Sdk\Contracts\WebhookDestinoCrearRequest;
-
-$solicitud = new WebhookDestinoCrearRequest();
-$solicitud->url = 'https://miempresa.com/webhooks/ecuafact';
-$solicitud->eventos = ['document.authorized', 'document.rejected'];
-$destino = $client->crearWebhookDestino($solicitud);
-$client->probarWebhookDestino($destino->publicId);
-```
+El SDK te ayuda a recibir webhooks (verificar la firma y leer el evento; mas abajo, en la seccion Webhooks). Los
+destinos (crear, pausar, rotar el secreto, revisar entregas) los administras desde el portal, la CLI, el servidor
+MCP o la API REST.
 
 ## Variables de entorno
 
@@ -338,7 +330,9 @@ los campos string originales no cambian.
 Todo error del API tiene la misma forma: `{ "estado": "rechazado", "codEstado": 3002, "msgError": "...",
 "errores": [...] }`. Las de API heredan de `EcuafactApiException` (`codEstado` como int, `estado`, `msgError`,
 `errores`, `status` con el codigo HTTP, `correlationId`, `idempotencyKey`, `retryAfter`, `esReintentable`;
-`estadoHttp` es el mismo valor que `status`); todas heredan de `EcuafactSdkException`. Si el cuerpo no era
+`estadoHttp` es el mismo valor que `status`); todas heredan de `EcuafactSdkException`. Una respuesta 2xx con cuerpo vacio o ilegible lanza
+`EcuafactInvalidResponseException` (`status`, `idempotencyKey`, `correlationId`): en una emision, repite con la misma
+`Idempotency-Key` y no emitas con otra. Si el cuerpo de un error no era
 JSON, `codEstado` vale 0. Compara `codEstado` con las constantes de `Contracts\CodEstado`:
 
 ```php
