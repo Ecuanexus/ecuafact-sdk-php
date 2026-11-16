@@ -11,9 +11,9 @@
         "api",
         "sdk"
     ],
-    "homepage": "https://docsapi.ecuafact.com/v1/guias/sdk-php",
+    "homepage": "https://docs.mynexusapi.com/v1/guias/sdk-php",
     "support": {
-        "docs": "https://docsapi.ecuafact.com/v1/guias/sdk-php"
+        "docs": "https://docs.mynexusapi.com/v1/guias/sdk-php"
     },
     "authors": [
         {

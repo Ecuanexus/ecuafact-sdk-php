@@ -466,10 +466,10 @@ final class MejorasSdkTest extends TestCase
     public function testLeeVariablesDeEntorno(): void
     {
         putenv('ECUAFACT_API_KEY=clave-desde-entorno'); // NOSONAR: valor sintetico de prueba
-        putenv('ECUAFACT_BASE_URL=https://staging-api.mynexusapi.com/');
+        putenv('ECUAFACT_BASE_URL=https://api-sandbox.mynexusapi.com/');
         $options = new EcuafactClientOptions();
         self::assertSame('clave-desde-entorno', $options->apiKey);
-        self::assertSame('https://staging-api.mynexusapi.com/', $options->baseAddress);
+        self::assertSame('https://api-sandbox.mynexusapi.com/', $options->baseAddress);
 
         // getenv() devuelve false si la variable no existe: se usa el entorno.
         $options = new EcuafactClientOptions(baseAddress: getenv('NO_EXISTE_ECUAFACT'), apiKey: getenv('NO_EXISTE_ECUAFACT'));
@@ -514,7 +514,7 @@ final class MejorasSdkTest extends TestCase
 
     public function testExigeHttpsSinUsuarioConsultaNiFragmento(): void
     {
-        $esperado = 'debe ser una URL HTTPS absoluta, sin usuario, consulta ni fragmento (por ejemplo https://staging-api.mynexusapi.com/).';
+        $esperado = 'debe ser una URL HTTPS absoluta, sin usuario, consulta ni fragmento (por ejemplo https://api-sandbox.mynexusapi.com/).';
         $casos = [
             'http' => 'http://api.example/',
             'http local' => 'http://localhost:5000/',
@@ -540,7 +540,7 @@ final class MejorasSdkTest extends TestCase
         } finally {
             putenv('ECUAFACT_BASE_URL');
         }
-        self::assertSame('https://staging-api.mynexusapi.com/', (new EcuafactClientOptions('https://staging-api.mynexusapi.com/', 'k'))->baseAddress);
+        self::assertSame('https://api-sandbox.mynexusapi.com/', (new EcuafactClientOptions('https://api-sandbox.mynexusapi.com/', 'k'))->baseAddress);
         self::assertSame('HTTPS://api.example/', (new EcuafactClientOptions('HTTPS://api.example/', 'k'))->baseAddress);
     }
 

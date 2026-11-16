@@ -9,7 +9,7 @@ use Ecuafact\Sdk\Transport\TransportInterface;
 /**
  * Configuracion del cliente Ecuafact.
  *
- * - `baseAddress`: URL base del despliegue, sin `/v1` (por ejemplo `https://staging-api.mynexusapi.com/`).
+ * - `baseAddress`: URL base del despliegue, sin `/v1` (por ejemplo `https://api-sandbox.mynexusapi.com/`).
  *   Si no la pasas, se lee de la variable de entorno `ECUAFACT_BASE_URL`.
  * - `apiKey`: credencial de la integracion (cabecera `X-Api-Key`). Si no la pasas, se lee de
  *   `ECUAFACT_API_KEY`. Nunca aparece en `var_dump`, `print_r`, `json_encode` ni en las trazas.
@@ -227,12 +227,12 @@ final class EcuafactClientOptions
         if (!is_array($parts) || $scheme !== 'https' || ($parts['host'] ?? '') === ''
             || isset($parts['query']) || isset($parts['fragment']) || isset($parts['user']) || isset($parts['pass'])) {
             throw new EcuafactConfigurationException(
-                $origen . ' debe ser una URL HTTPS absoluta, sin usuario, consulta ni fragmento (por ejemplo https://staging-api.mynexusapi.com/).'
+                $origen . ' debe ser una URL HTTPS absoluta, sin usuario, consulta ni fragmento (por ejemplo https://api-sandbox.mynexusapi.com/).'
             );
         }
         if (preg_match('#/v1/?$#i', $baseAddress) === 1) {
             throw new EcuafactConfigurationException(
-                $origen . ' no debe terminar en /v1: el SDK agrega /v1 a cada ruta. Usa la raiz del despliegue (por ejemplo https://staging-api.mynexusapi.com/).'
+                $origen . ' no debe terminar en /v1: el SDK agrega /v1 a cada ruta. Usa la raiz del despliegue (por ejemplo https://api-sandbox.mynexusapi.com/).'
             );
         }
         return $baseAddress;

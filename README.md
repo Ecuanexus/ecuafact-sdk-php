@@ -16,7 +16,7 @@ composer require "ecuafact/sdk:^1.0"
 
 - [ ] PHP 8.2+ con `ext-curl` y `ext-json`.
 - [ ] Una API Key de integracion.
-- [ ] La URL base del despliegue (sandbox `https://staging-api.mynexusapi.com/`).
+- [ ] La URL base del despliegue (sandbox `https://api-sandbox.mynexusapi.com/`).
 
 ## Uso
 
@@ -114,7 +114,7 @@ MCP o la API REST.
 | Variable | Se usa cuando | Ejemplo |
 |---|---|---|
 | `ECUAFACT_API_KEY` | No pasas `apiKey` (o pasas `null`/`false`) | `ek_live_...` |
-| `ECUAFACT_BASE_URL` | No pasas `baseAddress` (o pasas `null`/`false`) | `https://staging-api.mynexusapi.com/` |
+| `ECUAFACT_BASE_URL` | No pasas `baseAddress` (o pasas `null`/`false`) | `https://api-sandbox.mynexusapi.com/` |
 
 El SDK no distingue ambientes: el ambiente lo define la URL. La URL debe ser absoluta y usar
 `https`, sin usuario, consulta ni fragmento, y **no** debe terminar en `/v1`: el SDK agrega `/v1` a
@@ -417,7 +417,7 @@ verifica solo el estandar. Aceptan el secreto con o sin el prefijo `whsec_`; un 
 
 ## Documentacion
 
-- [Guia del SDK PHP](https://docsapi.ecuafact.com/v1/guias/sdk-php)
+- [Guia del SDK PHP](https://docs.mynexusapi.com/v1/guias/sdk-php)
 
 ## Licencia
 

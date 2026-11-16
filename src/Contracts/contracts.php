@@ -62,6 +62,12 @@ class InfoTributaria
 {
     /** Obligatorio. */
     public ?string $ruc = null;
+    /** Razon social del emisor para este documento, hasta 300 caracteres; si se omite, se usa la configurada. */
+    public ?string $razonSocial = null;
+    /** Nombre comercial del emisor para este documento, hasta 300 caracteres. */
+    public ?string $nombreComercial = null;
+    /** Direccion de la matriz, hasta 300 caracteres; enviarla si el emisor no tiene una configurada. */
+    public ?string $dirMatriz = null;
     /** Obligatorio. */
     public ?string $estab = null;
     /** Obligatorio. */
