@@ -52,10 +52,20 @@ final class CodEstado
     public const EMISOR_NO_CONFIGURADO = 4001;
     /** Seguimiento: "La firma electronica no es valida." */
     public const FIRMA_NO_VALIDA = 4002;
-    /** Seguimiento: "La suscripcion no esta activa." */
+    /** 403 / seguimiento: "La cuenta no tiene un plan vigente." */
     public const SUSCRIPCION_INACTIVA = 4003;
     /** 429 / seguimiento: "Cupo agotado." Nunca se reintenta. */
     public const CUPO_AGOTADO = 4004;
+    /** 403: "El plan actual no permite mas RUC." */
+    public const LIMITE_RUC_PLAN = 4005;
+    /** 429: "Alcanzaste el limite de 100 consultas de prueba al SRI." Nunca se reintenta. */
+    public const CONSULTAS_SANDBOX_AGOTADAS = 4006;
+    /** 429: "No tienes consultas al SRI disponibles." Nunca se reintenta. */
+    public const CONSULTAS_SRI_AGOTADAS = 4007;
+    /** 403: "Los webhooks en produccion estan disponibles desde el plan Inicio." */
+    public const WEBHOOKS_NO_INCLUIDOS_EN_PLAN = 4008;
+    /** 410: "Este comprobante supero el plazo de resguardo de tu plan." */
+    public const COMPROBANTE_FUERA_DE_RESGUARDO = 4009;
     /** 500 / seguimiento: "Error interno." */
     public const ERROR_INTERNO = 5001;
     /** 503: "Servicio temporalmente no disponible." */

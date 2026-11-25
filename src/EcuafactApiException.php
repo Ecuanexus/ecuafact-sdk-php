@@ -15,7 +15,7 @@ use Ecuafact\Sdk\Contracts\CodEstado;
  * `codEstado`: {@see EcuafactAuthException} (401/403), {@see EcuafactValidationException} (400/413/415/422/501: solicitudes rechazadas),
  * {@see EcuafactNotFoundException} (404), {@see EcuafactConflictException} (409),
  * {@see EcuafactRateLimitException} (429, 5005 `limite_solicitudes`),
- * {@see EcuafactQuotaException} (429, 4004 `cupo_agotado`)
+ * {@see EcuafactQuotaException} (429 por saldo agotado: 4004, 4006 o 4007)
  * y {@see EcuafactServerException} (5xx). Un `catch (EcuafactApiException)` las atrapa todas.
  */
 class EcuafactApiException extends EcuafactSdkException
@@ -39,7 +39,7 @@ class EcuafactApiException extends EcuafactSdkException
     public readonly ?int $retryAfter;
     /**
      * True si repetir la misma solicitud (con la misma Idempotency-Key) puede tener exito: 408, 425, 500, 502,
-     * 503, 504 y el 429 con `codEstado` 5005. El 429 4004 (`cupo_agotado`) nunca.
+     * 503, 504 y el 429 con `codEstado` 5005. Los 429 por saldo agotado (4004, 4006 o 4007) nunca.
      */
     public readonly bool $esReintentable;
 
@@ -93,7 +93,11 @@ class EcuafactApiException extends EcuafactSdkException
             $estadoHttp === 501 => EcuafactValidationException::class,
             $estadoHttp === 404 => EcuafactNotFoundException::class,
             $estadoHttp === 409 => EcuafactConflictException::class,
-            $estadoHttp === 429 && $codEstado === CodEstado::CUPO_AGOTADO => EcuafactQuotaException::class,
+            $estadoHttp === 429 && in_array($codEstado, [
+                CodEstado::CUPO_AGOTADO,
+                CodEstado::CONSULTAS_SANDBOX_AGOTADAS,
+                CodEstado::CONSULTAS_SRI_AGOTADAS,
+            ], true) => EcuafactQuotaException::class,
             $estadoHttp === 429 => EcuafactRateLimitException::class,
             $estadoHttp >= 500 && $estadoHttp <= 599 => EcuafactServerException::class,
             default => self::class,

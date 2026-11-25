@@ -173,8 +173,13 @@ final class MejorasSdkTest extends TestCase
     {
         self::assertSame(3002, CodEstado::COMPROBANTE_INVALIDO);
         self::assertSame(4004, CodEstado::CUPO_AGOTADO);
+        self::assertSame(4005, CodEstado::LIMITE_RUC_PLAN);
+        self::assertSame(4006, CodEstado::CONSULTAS_SANDBOX_AGOTADAS);
+        self::assertSame(4007, CodEstado::CONSULTAS_SRI_AGOTADAS);
+        self::assertSame(4008, CodEstado::WEBHOOKS_NO_INCLUIDOS_EN_PLAN);
+        self::assertSame(4009, CodEstado::COMPROBANTE_FUERA_DE_RESGUARDO);
         self::assertSame(5005, CodEstado::LIMITE_SOLICITUDES);
-        self::assertCount(29, (new \ReflectionClass(CodEstado::class))->getConstants());
+        self::assertCount(34, (new \ReflectionClass(CodEstado::class))->getConstants());
         self::assertSame('comprobante_invalido', CodEstado::nombre(3002));
         self::assertSame('operacion_cancelada', CodEstado::nombre(6001));
         self::assertNull(CodEstado::nombre(3999));
@@ -823,12 +828,18 @@ final class MejorasSdkTest extends TestCase
         $casos = [
             [401, CodEstado::CREDENCIALES_INVALIDAS, EcuafactAuthException::class, false],
             [403, CodEstado::ACCESO_DENEGADO, EcuafactAuthException::class, false],
+            [403, CodEstado::SUSCRIPCION_INACTIVA, EcuafactAuthException::class, false],
+            [403, CodEstado::LIMITE_RUC_PLAN, EcuafactAuthException::class, false],
+            [403, CodEstado::WEBHOOKS_NO_INCLUIDOS_EN_PLAN, EcuafactAuthException::class, false],
             [400, CodEstado::SOLICITUD_INVALIDA, EcuafactValidationException::class, false],
             [422, CodEstado::COMPROBANTE_INVALIDO, EcuafactValidationException::class, false],
             [404, CodEstado::NO_ENCONTRADO, EcuafactNotFoundException::class, false],
             [409, CodEstado::COMPROBANTE_DUPLICADO, EcuafactConflictException::class, false],
+            [410, CodEstado::COMPROBANTE_FUERA_DE_RESGUARDO, EcuafactApiException::class, false],
             [429, CodEstado::LIMITE_SOLICITUDES, EcuafactRateLimitException::class, true],
             [429, CodEstado::CUPO_AGOTADO, EcuafactQuotaException::class, false],
+            [429, CodEstado::CONSULTAS_SANDBOX_AGOTADAS, EcuafactQuotaException::class, false],
+            [429, CodEstado::CONSULTAS_SRI_AGOTADAS, EcuafactQuotaException::class, false],
             [500, CodEstado::ERROR_INTERNO, EcuafactServerException::class, true],
             [502, CodEstado::ERROR_DEPENDENCIA, EcuafactServerException::class, true],
             [501, CodEstado::NO_IMPLEMENTADO, EcuafactValidationException::class, false],

@@ -82,6 +82,8 @@ final class ParidadContratoTest extends TestCase
         'Contexto' => ['ContextoDto'],
         'Contribuyente' => ['ContribuyenteDto'],
         'QuotaBucket' => ['QuotaBucketDto'],
+        'ResumenPlanConsumo' => ['ResumenPlanConsumoDto'],
+        'SaldoConsultasSri' => ['SaldoConsultasSriDto'],
         'PerfilEmisor' => ['PerfilEmisorDto'],
         'Comprobante' => ['ComprobanteDto'],
         'PaginaComprobantes' => ['PaginaComprobantesDto'],
@@ -239,6 +241,103 @@ final class ParidadContratoTest extends TestCase
             \Ecuafact\Sdk\Contracts\TipoComprobante::cases()
         );
         $this->assertEqualsCanonicalizing($schemas['OperationDto']['properties']['tipoDocumento']['enum'], $tipos);
+    }
+
+    public function testRideYXmlDeclaran410YElSdkNoReintenta410Ni429DeSaldoAgotado(): void
+    {
+        $ruc = '0921357232001';
+        $clave = '1211202601179999999900110010010000001231234567813';
+        foreach (['ride', 'xml'] as $sufijo) {
+            $plantilla = "/v1/contribuyentes/{identificacion}/comprobantes/{claveAcceso}/$sufijo";
+            $resp410 = self::$spec['paths'][$plantilla]['get']['responses']['410'] ?? null;
+            $this->assertIsArray($resp410, "Falta respuesta 410 en $plantilla");
+            $this->assertSame('#/components/schemas/ErrorDto', $resp410['content']['application/json']['schema']['$ref'] ?? null);
+
+            $intentos = 0;
+            $transporte = new class($intentos) implements TransportInterface {
+                private int $intentos;
+
+                public function __construct(int &$intentos)
+                {
+                    $this->intentos = &$intentos;
+                }
+
+                public function request(string $method, string $url, array $headers, ?string $body): TransportResponse
+                {
+                    $this->intentos++;
+                    return new TransportResponse(
+                        410,
+                        '{"estado":"rechazo_configuracion","codEstado":4009,"msgError":"Este comprobante superó el plazo de resguardo de tu plan.","errores":[]}',
+                        ['Content-Type' => 'application/json']
+                    );
+                }
+            };
+            $cliente = new EcuafactClient(new EcuafactClientOptions(
+                baseAddress: 'https://api.example/',
+                apiKey: 'clave.secreta',
+                identificacion: $ruc,
+                transport: $transporte,
+                retryBaseDelaySeconds: 0.0,
+                retryJitterSeconds: 0.0,
+            ));
+            try {
+                if ($sufijo === 'ride') {
+                    $cliente->descargarRide($ruc, $clave);
+                } else {
+                    $cliente->descargarXml($ruc, $clave);
+                }
+                self::fail('Se esperaba EcuafactApiException para 410.');
+            } catch (\Ecuafact\Sdk\EcuafactApiException $error) {
+                $this->assertSame(410, $error->status);
+                $this->assertSame(\Ecuafact\Sdk\Contracts\CodEstado::COMPROBANTE_FUERA_DE_RESGUARDO, $error->codEstado);
+                $this->assertFalse($error->esReintentable);
+                $this->assertSame(1, $intentos);
+            }
+        }
+
+        foreach ([
+            \Ecuafact\Sdk\Contracts\CodEstado::CUPO_AGOTADO,
+            \Ecuafact\Sdk\Contracts\CodEstado::CONSULTAS_SANDBOX_AGOTADAS,
+            \Ecuafact\Sdk\Contracts\CodEstado::CONSULTAS_SRI_AGOTADAS,
+        ] as $codigo) {
+            $intentos = 0;
+            $transporte = new class($intentos, $codigo) implements TransportInterface {
+                private int $intentos;
+                private int $codigo;
+
+                public function __construct(int &$intentos, int $codigo)
+                {
+                    $this->intentos = &$intentos;
+                    $this->codigo = $codigo;
+                }
+
+                public function request(string $method, string $url, array $headers, ?string $body): TransportResponse
+                {
+                    $this->intentos++;
+                    return new TransportResponse(
+                        429,
+                        '{"estado":"rechazo_configuracion","codEstado":' . $this->codigo . ',"msgError":"Saldo agotado.","errores":[]}',
+                        ['Content-Type' => 'application/json']
+                    );
+                }
+            };
+            $cliente = new EcuafactClient(new EcuafactClientOptions(
+                baseAddress: 'https://api.example/',
+                apiKey: 'clave.secreta',
+                identificacion: $ruc,
+                transport: $transporte,
+                retryBaseDelaySeconds: 0.0,
+                retryJitterSeconds: 0.0,
+            ));
+            try {
+                $cliente->consultarContribuyente($ruc);
+                self::fail('Se esperaba EcuafactQuotaException.');
+            } catch (\Ecuafact\Sdk\EcuafactQuotaException $error) {
+                $this->assertSame($codigo, $error->codEstado);
+                $this->assertFalse($error->esReintentable);
+                $this->assertSame(1, $intentos);
+            }
+        }
     }
 
     /** Lo que viaja en el cuerpo: con todas las propiedades llenas, cada clave existe en el contrato. */

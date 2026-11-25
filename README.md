@@ -4,7 +4,7 @@ Cliente oficial en PHP del API publico de facturacion electronica Ecuafact (cont
 autenticacion, idempotencia, reintentos configurables, espera del resultado, logo del perfil y verificacion de la firma de los
 webhooks que recibes. Compatible con PHP 8.2+.
 
-Versión actual: `v1.0.0`.
+Versión actual: `v1.1.0`.
 
 ## Instalacion
 
@@ -180,7 +180,7 @@ y los estados de `retryableStatusCodes` (`408, 425, 500, 502, 503, 504`).
 
 - `429` con `codEstado` 5005 (`limite_solicitudes`): se reintenta por defecto, respetando `Retry-After` con el
   tope `maxRetryDelaySeconds`. `retryRateLimited: false` lo desactiva.
-- `429` con `codEstado` 4004 (`cupo_agotado`), con otro codigo o sin cuerpo: **nunca** se reintenta.
+- `429` por saldo agotado (`4004` `cupo_agotado`, `4006` `consultas_sandbox_agotadas`, `4007` `consultas_sri_agotadas`), con otro codigo o sin cuerpo: **nunca** se reintenta.
 
 ## Opciones
 
@@ -195,7 +195,7 @@ y los estados de `retryableStatusCodes` (`408, 425, 500, 502, 503, 504`).
 | `maxAttempts` | `3` | Intentos por solicitud (minimo 1) |
 | `respectRetryAfter` | `true` | Espera al menos lo que indica `Retry-After` |
 | `maxRetryDelaySeconds` | `60.0` | Espera maxima entre reintentos (`0` = sin tope) |
-| `retryRateLimited` | `true` | Reintenta el `429` con `codEstado` 5005; nunca el 4004 |
+| `retryRateLimited` | `true` | Reintenta el `429` con `codEstado` 5005; nunca el 4004, 4006 ni 4007 |
 | `retryableStatusCodes` | `[408, 425, 500, 502, 503, 504]` | Estados HTTP reintentables |
 | `retryBaseDelaySeconds` | `0.2` | Espera base entre reintentos |
 | `retryBackoff` | `RetryBackoff::Linear` | `Linear` (base x intento) o `Exponential` (base x 2^(intento-1)); acepta `'linear'`/`'exponential'` |
@@ -313,12 +313,13 @@ los campos string originales no cambian.
 
 | Excepcion | Cuando | Que hacer |
 |---|---|---|
-| `EcuafactAuthException` | 401/403 | Revisa la API Key y el contribuyente autorizado |
+| `EcuafactAuthException` | 401/403 (`3009`..`3011`, `4003`, `4005`, `4008`) | Revisa la API Key, la lista opcional de IP permitidas, los permisos o tu plan vigente |
 | `EcuafactValidationException` | 400/413/415/422/501 | Corrige los datos segun `errores` |
 | `EcuafactNotFoundException` | 404 | Revisa la identificacion, la clave o el id |
 | `EcuafactConflictException` | 409 | Misma `Idempotency-Key` con otro contenido, o comprobante duplicado |
 | `EcuafactRateLimitException` | 429 con `codEstado` 5005 | Espera `retryAfter` segundos y repite |
-| `EcuafactQuotaException` | 429 con `codEstado` 4004 | Compra cupo; no repitas |
+| `EcuafactQuotaException` | 429 con `codEstado` 4004, 4006 o 4007 | Saldo agotado (comprobantes o consultas al SRI); no repitas |
+| `EcuafactApiException` | Otros errores HTTP (por ejemplo 410 con 4009 `comprobante_fuera_de_resguardo` en RIDE/XML) | Revisa `codEstado` y `msgError`; el 410 no se reintenta |
 | `EcuafactServerException` | 5xx | Repite con la misma `Idempotency-Key` si `esReintentable` |
 | `EcuafactConnectionException` | Sin respuesta HTTP | Repite con la misma `Idempotency-Key` |
 | `EcuafactTimeoutException` | Tiempo agotado | Consulta la operacion o repite con la misma clave |

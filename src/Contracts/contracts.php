@@ -689,6 +689,38 @@ class QuotaBucket
     public ?int $reservadosExtra = null;
     public ?int $consumidosExtra = null;
     public ?int $disponiblesExtra = null;
+    public ?ResumenPlanConsumo $plan = null;
+    public ?SaldoConsultasSri $consultasSri = null;
+}
+
+class ResumenPlanConsumo
+{
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
+    public ?string $codigo = null;
+    public ?string $nombre = null;
+    public ?bool $vigente = null;
+    public ?string $vigenteHasta = null;
+    public ?int $maxRuc = null;
+    public ?int $rucsActivos = null;
+    public ?int $resguardoDias = null;
+    public ?bool $esFundador = null;
+}
+
+class SaldoConsultasSri
+{
+    /** @var array<string, mixed> Campos del API que este modelo no declara. */
+    public array $extra = [];
+
+    public ?int $paqueteLimite = null;
+    public ?int $paqueteConsumidas = null;
+    public ?int $paqueteDisponibles = null;
+    public ?string $vigenteHasta = null;
+    public ?int $fundadorMensualLimite = null;
+    public ?int $fundadorMensualConsumidas = null;
+    public ?int $fundadorMensualDisponibles = null;
+    public ?int $totalDisponibles = null;
 }
 
 class EstadoServicio
